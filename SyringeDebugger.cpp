@@ -937,6 +937,9 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 		SetThreadContext(currentThread, &context);
 		EverythingIsOK = true;
 
+		auto [V, S] = AnalyzeAddr(context.Eip);
+		Log::WriteLine(__FUNCTION__ ": 意外断点：0x%08X (%s+0x%X)", context.Eip, S.c_str(), V);
+		MessageBoxA(NULL, __FUNCTION__ ": 遇到了意外的断点。详见Syringe.log。", VersionString, MB_ICONEXCLAMATION | MB_OK);
 
 		return DBG_EXCEPTION_NOT_HANDLED;
 	}
