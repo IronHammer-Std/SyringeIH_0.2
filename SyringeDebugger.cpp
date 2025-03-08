@@ -981,10 +981,10 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 		return DBG_CONTINUE;
 	}
 	//else if (exceptCode == 114514)
-	else if (exceptCode == EXCEPTION_UNKNOWN_ERROR_1)//异常未捕获
+	else if (exceptCode == EXCEPTION_UNKNOWN_ERROR_1)//非致命的
 	{
 		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1");
-		Log::WriteLine("有一个遗漏的异常未被捕获。（不影响程序工作）");
+		Log::WriteLine("程序触发了非致命的异常。（不影响程序工作）");
 		if(CheckInsignificantException)Handle_StackDump(dbgEvent);
 		return DBG_EXCEPTION_NOT_HANDLED;
 	}
