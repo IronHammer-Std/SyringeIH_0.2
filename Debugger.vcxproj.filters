@@ -57,6 +57,9 @@
     <ClCompile Include="ExtPack.cpp">
       <Filter>Main</Filter>
     </ClCompile>
+    <ClCompile Include="SymMap.cpp">
+      <Filter>File</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Handle.h">
@@ -103,6 +106,9 @@
     </ClInclude>
     <ClInclude Include="ExtPack.h">
       <Filter>Main</Filter>
+    </ClInclude>
+    <ClInclude Include="SymMap.h">
+      <Filter>File</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

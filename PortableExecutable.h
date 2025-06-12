@@ -14,13 +14,6 @@
 
 #include <windows.h>
 
-struct HookEx
-{
-	int Priority;
-	std::string Sub;
-};
-
-
 
 struct PEThunkData
 {
@@ -105,6 +98,8 @@ public:
 
 	IMAGE_SECTION_HEADER const* FindSection(
 		std::string_view name) const noexcept;
+
+	std::unordered_map<std::string, DWORD> PortableExecutable::GetExportSymbols() noexcept;
 
 private:
 	bool ReadFile();

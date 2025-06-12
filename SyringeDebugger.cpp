@@ -6,13 +6,15 @@
 #include "Log.h"
 #include "Support.h"
 #include "Setting.h"
+#include "SymMap.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <array>
 #include <fstream>
 #include <memory>
 #include <numeric>
-
+#include <Psapi.h>
 #include <DbgHelp.h>
 
 using namespace std;
@@ -56,6 +58,8 @@ std::string UTF8toANSI(const std::string& MBCS)
 	return UnicodetoANSI(UTF8toUnicode(MBCS));
 }
 
+std::pair<DWORD ,std::wstring>  ResolveFunctionSymbol(HANDLE hProcess, DWORD address);
+
 std::pair<DWORD, std::string> SyringeDebugger::AnalyzeAddr(DWORD Addr)
 {
 	if (Database.InRange(Addr))
@@ -66,13 +70,28 @@ std::pair<DWORD, std::string> SyringeDebugger::AnalyzeAddr(DWORD Addr)
 	{
 		return Database.AnalyzeHookAddr(Addr);
 	}
+	if (ModuleMap::HasSymbol(Addr))
+	{
+		auto sym = ModuleMap::GetSymbol(Addr);
+		if (!sym.second.empty())return std::make_pair(sym.first, ModuleMap::GetLibName(Addr) + "!" + UnicodetoANSI(sym.second));
+	}
 	for (size_t i = 0; i < LibBase.size() - 1; i++)
 	{
 		if (LibBase[i].BaseAddr <= Addr && Addr < LibBase[i + 1].BaseAddr)
-			return std::make_pair(Addr - LibBase[i].BaseAddr, std::move(UnicodetoANSI(LibBase[i].Name)));
+		{
+			auto Ret = std::make_pair(Addr - LibBase[i].BaseAddr, std::move(UnicodetoANSI(LibBase[i].Name)));
+			auto Res = ResolveFunctionSymbol(pInfo.hProcess, Addr);
+			if (Res.second == L"[未知]" || Res.first == 0xFFFFFFFF)return Ret;
+			else return std::make_pair(Res.first, UnicodetoANSI(LibBase[i].Name + std::wstring(L"!") + Res.second));
+		}
 	}
 	if (LibBase.back().BaseAddr <= Addr)
-		return std::make_pair(Addr - LibBase.back().BaseAddr, std::move(UnicodetoANSI(LibBase.back().Name)));
+	{
+		auto Ret = std::make_pair(Addr - LibBase.back().BaseAddr, std::move(UnicodetoANSI(LibBase.back().Name)));
+		auto Res = ResolveFunctionSymbol(pInfo.hProcess, Addr);
+		if (Res.second == L"[未知]" || Res.first == 0xFFFFFFFF)return Ret;
+		else return std::make_pair(Res.first, UnicodetoANSI(LibBase.back().Name + std::wstring(L"!") + Res.second));
+	}
 	return std::make_pair(Addr, "UNKNOWN");
 }
 
@@ -549,11 +568,279 @@ std::string GetExcStr(int Exc)
 	}
 }
 
+bool LoadSymbolsForDLL(HANDLE hProcess, const std::wstring& dllName, const std::wstring& pdbPath, size_t Size, DWORD baseAddr, bool ForceLoad) 
+{
+	DWORD Orig = SymGetOptions();
+	if (ForceLoad)SymSetOptions(Orig | SYMOPT_LOAD_ANYTHING);
+	struct __Helper { DWORD Orig; bool ForceLoad;~__Helper() { if (ForceLoad)SymSetOptions(Orig); }}HLP{ Orig, ForceLoad };
+
+	// 设置符号搜索路径
+	if (!SymSetSearchPathW(hProcess, pdbPath.c_str())) 
+	{
+		Log::WriteLine(__FUNCTION__ ": SymSetSearchPath 设置失败，错误码 %d", GetLastError());
+	}
+
+
+	// 加载模块符号
+	DWORD64 modBase = SymLoadModuleExW(
+		hProcess,
+		NULL,
+		pdbPath.c_str(),
+		dllName.c_str(),
+		baseAddr,
+		Size,        // 自动确定大小
+		nullptr,   // 不需要额外数据
+		0
+	);
+
+	IMAGEHLP_MODULEW64 hlp;
+	hlp.SizeOfStruct = sizeof(hlp);
+	if (!SymGetModuleInfoW64(hProcess, baseAddr, &hlp))
+	{
+		Log::WriteLine(__FUNCTION__ ": SymGetModuleInfoW64 获取模块信息失败，错误码 %d", GetLastError());
+		//return false;
+	}
+	else
+	{
+		//output infor hlp
+		Log::WriteLine(__FUNCTION__": hlp.BaseOfImage = %016llX", hlp.BaseOfImage);
+		Log::WriteLine(__FUNCTION__": hlp.ImageSize = %u", hlp.ImageSize);
+		Log::WriteLine(__FUNCTION__": hlp.TimeDateStamp = %u", hlp.TimeDateStamp);
+		Log::WriteLine(__FUNCTION__": hlp.CheckSum = %u", hlp.CheckSum);
+		Log::WriteLine(__FUNCTION__": hlp.ModuleName = %s", UnicodetoANSI(hlp.ModuleName).c_str());
+		Log::WriteLine(__FUNCTION__": hlp.ImageName = %s", UnicodetoANSI(hlp.ImageName).c_str());
+		Log::WriteLine(__FUNCTION__": hlp.LoadedImageName = %s", UnicodetoANSI(hlp.LoadedImageName).c_str());
+		Log::WriteLine(__FUNCTION__": hlp.TypeInfo = %s", hlp.TypeInfo ? "true" : "false");
+		Log::WriteLine(__FUNCTION__": hlp.SymType = %d", hlp.SymType);
+		Log::WriteLine(__FUNCTION__": hlp.NumSyms = %u", hlp.NumSyms);
+		Log::WriteLine(__FUNCTION__": hlp.Publics  = %s", hlp.Publics ? "true" : "false");
+		Log::WriteLine(__FUNCTION__": hlp.LineNumbers  = %s", hlp.LineNumbers ? "true" : "false");
+		
+		/*
+		SymEnumSymbolsW(hProcess, baseAddr, L"*",
+			[](PSYMBOL_INFOW sym, ULONG sz, PVOID)
+			{
+				//Log::WriteLine(__FUNCTION__": Address = %016llX", sym->Address);
+				//Log::WriteLine(__FUNCTION__": Name = %s", UnicodetoANSI(sym->Name).c_str());
+				//Log::WriteLine(__FUNCTION__": Flags = %08X", sym->Flags);
+				//Log::WriteLine(__FUNCTION__": Size = %u", sz);
+				return TRUE; 
+			},
+			nullptr
+		);
+		*/
+	}
+
+	if (modBase == 0) {
+		Log::WriteLine(__FUNCTION__ ": SymLoadModuleEx 失败, 错误码 %d", GetLastError());
+		Log::WriteLine(__FUNCTION__ ": 加载PDB: \"%s\"", UnicodetoANSI(pdbPath).c_str());
+		Log::WriteLine(__FUNCTION__ ": DLL: \"%s\"", UnicodetoANSI(dllName).c_str());
+		Log::WriteLine(__FUNCTION__ ": 基址: %08X", baseAddr);
+		Log::WriteLine(__FUNCTION__ ": 文件大小: %u", Size);
+		// 尝试直接通过路径加载
+		modBase = SymLoadModuleExW(
+			hProcess,
+			NULL,
+			pdbPath.c_str(),
+			dllName.c_str(),
+			baseAddr,
+			Size,
+			nullptr,
+			0
+		);
+
+		hlp.SizeOfStruct = sizeof(hlp);
+		if (!SymGetModuleInfoW64(hProcess, baseAddr, &hlp))
+		{
+			Log::WriteLine(__FUNCTION__ ": SymGetModuleInfoW64 获取模块信息失败，错误码 %d", GetLastError());
+			//return false;
+		}
+
+		if (modBase == 0) {
+			Log::WriteLine(__FUNCTION__ ": DLL 载入符号失败, 错误码 %d", GetLastError());
+			return false;
+		}
+	}
+
+	Log::WriteLine(__FUNCTION__ ": \"%s\" 已在 %08X 处加载PDB符号。", UnicodetoANSI(dllName).c_str(), modBase);
+	return true;
+}
+
+std::string GetFileName(const std::string& ss)//文件名
+{
+	using namespace std;
+	auto p = ss.find_last_of('\\');
+	return p == ss.npos ? ss : string(ss.begin() + min(p + 1, ss.length()), ss.end());
+}
+
+std::wstring GetFileName(const std::wstring& ss)//文件名
+{
+	using namespace std;
+	auto p = ss.find_last_of('\\');
+	return p == ss.npos ? ss : wstring(ss.begin() + min(p + 1, ss.length()), ss.end());
+}
+
+std::pair<DWORD, std::wstring>  ResolveFunctionSymbol(HANDLE hProcess, DWORD address) {
+	
+	
+	
+// 准备符号缓冲区
+	SYMBOL_INFOW* pSymbol = (SYMBOL_INFOW*)malloc(sizeof(SYMBOL_INFOW) + MAX_SYM_NAME * sizeof(wchar_t));
+	if (!pSymbol) return { 0, L"" };
+
+	pSymbol->SizeOfStruct = sizeof(SYMBOL_INFOW);
+	pSymbol->MaxNameLen = MAX_SYM_NAME;
+
+	DWORD64 displacement = 0;
+
+	// 尝试获取源文件信息
+	IMAGEHLP_LINEW64 line;
+	line.SizeOfStruct = sizeof(IMAGEHLP_LINEW64);
+	DWORD lineDisplacement;
+	bool HasLine = false;
+	if (SymGetLineFromAddrW64(hProcess, address, &lineDisplacement, &line)) {
+		HasLine = true;//return { DWORD(displacement), std::wstring(L"[源] ") + line.FileName + L":" + std::to_wstring(line.LineNumber) };
+	}
+	else {
+		//Log::WriteLine(__FUNCTION__ ": SymGetLineFromAddrW64 获取源文件信息失败，错误码 %d", GetLastError());
+	}
+
+
+	if (SymFromAddrW(hProcess, address, &displacement, pSymbol)) {
+		std::wstring result(pSymbol->Name);
+		free(pSymbol);
+		if (HasLine)
+		{
+			result += L'{';
+			result += GetFileName(line.FileName);
+			result += L"，行";
+			result += std::to_wstring(line.LineNumber);
+			result += L'}';
+		}
+		return { DWORD(displacement), result };
+	}
+	else {
+		//Log::WriteLine(__FUNCTION__ ": SymFromAddrW 获取符号失败，错误码 %d", GetLastError());
+	}
+
+	free(pSymbol);
+
+	if (HasLine)
+	{
+		return { DWORD(lineDisplacement), std::wstring(L"[源] ") + line.FileName + L":" + std::to_wstring(line.LineNumber) };
+	}
+
+	return { address, L"[未知]" };
+}
+
+const std::wstring& ExecutableDirectoryPathW();
+void AddSymbolFromMapFile(HANDLE hProcess, DWORD64 moduleBase, DWORD Size, const std::wstring& fileName, const std::string& exeName);
+
+bool g_symInitialized = false;
+
+void SyringeDebugger::InitializeSymbols()
+{
+	if (g_symInitialized) return;
+	SymSetOptions(SYMOPT_DEBUG | SYMOPT_UNDNAME | SYMOPT_LOAD_LINES);
+	if (!SymInitialize(pInfo.hProcess, nullptr, FALSE)) 
+	{
+		Log::WriteLine(__FUNCTION__ ": 无法初始化符号引擎，错误代码: %d", GetLastError());
+		return;
+	}
+
+	{
+		std::filesystem::path Exe{ exe };
+		Log::WriteLine(__FUNCTION__ ": Exe = %s", Exe.string().c_str());
+		Log::WriteLine(__FUNCTION__ ": dwExeSize = %u", dwExeSize);
+		Log::WriteLine(__FUNCTION__ ": ExeImageBase = %u", ExeImageBase);
+		auto we = Exe.wstring();
+		auto Map = we.substr(0, we.size() - 4) + L".map";
+		auto Pdb = we.substr(0, we.size() - 4) + L".pdb";
+		auto PdbPath = std::filesystem::path(Pdb);
+		if (std::filesystem::exists(PdbPath))
+		{
+			LoadSymbolsForDLL(
+				pInfo.hProcess,
+				Exe.wstring(),
+				PdbPath.wstring(),
+				(size_t)std::filesystem::file_size(PdbPath),
+				ExeImageBase,
+				true
+			);
+		}
+		else if (std::filesystem::exists(std::filesystem::path(Map)))
+		{
+
+			AddSymbolFromMapFile(
+				pInfo.hProcess,
+				ExeImageBase,
+				dwExeSize,
+				Map,
+				GetFileName(exe)
+			);
+		}
+	}
+	
+	
+
+	/*
+	LoadSymbolsForDLL(
+		pInfo.hProcess,
+		Exe.wstring(),
+		Exe.wstring()+L".sym",
+		(size_t)dwExeSize,
+		ExeImageBase,
+		true);*/
+
+
+	//for(auto& [k,v]: LibAddr)
+	//	Log::WriteLine("已加载库：%s 基址：0x%08X", k.c_str(), v);
+
+	for (auto& [Name, Lib] : LibExt)
+	{
+		Log::WriteLine("Name = %s", Name.c_str());
+
+		auto fn = GetFileName(Name);
+		for (auto& c : fn)c = (char)toupper(c);
+
+		if (Lib.PDBExists)
+		{
+			LoadSymbolsForDLL(
+				pInfo.hProcess,
+				Lib.ModuleName,
+				Lib.PDBPath,
+				(size_t)Lib.PDBSize,
+				LibAddr[fn],
+				false);
+		}
+		else if (Lib.MAPExists)
+		{
+			std::filesystem::path dllPath{ Name };
+			AddSymbolFromMapFile(
+				pInfo.hProcess,
+				LibAddr[fn],
+				(DWORD)std::filesystem::file_size(dllPath),
+				Lib.MAPPath,
+				GetFileName(Name)
+			);
+		}
+	}
+
+	
+
+	
+	
+	g_symInitialized = true;
+}
+
 void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 {
 	auto const exceptCode = dbgEvent.u.Exception.ExceptionRecord.ExceptionCode;
 	auto const exceptAddr = dbgEvent.u.Exception.ExceptionRecord.ExceptionAddress;
 	auto const AccessAddr = dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[1];
+
+	InitializeSymbols();
+
 	auto [Rel, Str] = AnalyzeAddr((DWORD)exceptAddr);
 	Log::WriteLine(
 		__FUNCTION__ ": 发生异常，代码: 0x%08X ", exceptCode);
@@ -611,7 +898,7 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 		{
 			DWORD dw;
 			if (ReadMem(p, &dw, 4)) {
-				if (dw)
+				if (dw >= 0x10000 && dw <= 0xFFFF0000)
 				{
 					
 					auto [Rel1, Str1] = AnalyzeAddr(dw);
@@ -983,8 +1270,35 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 	//else if (exceptCode == 114514)
 	else if (exceptCode == EXCEPTION_UNKNOWN_ERROR_1)//非致命的
 	{
+		/*
+		char Buf[260];
+		Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1");
+		GetExceptionWhatSafe(
+			pInfo.hProcess,
+			&dbgEvent.u.Exception.ExceptionRecord,
+			Buf, 
+			sizeof(Buf)
+		);
+		Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1: %s", Buf);
+		*/
+
+		char Buf[260];
+		auto ptr = dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[1];
+		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1  ADDR = %08X", ptr);
+		//MessageBoxA(NULL, "!!", "!!", MB_OK);
+		
+		//read ptr+4 as a pointer REMOTELY
+		LPVOID pRemotePtr;
+		ReadMem(((LPBYTE)ptr) + 4, &pRemotePtr, sizeof(pRemotePtr));
+		ReadMem(pRemotePtr, Buf, sizeof(Buf) - 1);
+		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1: %s", Buf);
+
+		ReadMem(((LPBYTE)ptr), &pRemotePtr, sizeof(pRemotePtr));
+		auto [Rel, DllStr]=AnalyzeAddr((DWORD)pRemotePtr);
+
 		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1");
-		Log::WriteLine("程序触发了非致命的异常。（不影响程序工作）");
+		Log::WriteLine("程序触发了一个可能已经捕获的异常。（一般不会影响运行）");
+		Log::WriteLine("%s ：%s", DllStr.c_str(), Buf);
 		if(CheckInsignificantException)Handle_StackDump(dbgEvent);
 		return DBG_EXCEPTION_NOT_HANDLED;
 	}
@@ -1133,6 +1447,7 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		}
 	}
 
+	SymCleanup(pInfo.hProcess);
 	CloseHandle(pInfo.hProcess);
 
 	Log::WriteLine(
@@ -1307,6 +1622,9 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 	std::string fn = UnicodetoANSI(file->cFileName);
 	std::string AbsPath = Path + "\\" + fn;
 	std::string cfn = fn;
+
+	bool HasHandshake = true;
+
 	for (auto& c : cfn)c = (char)::toupper(c);
 	if (cfn == "SYRINGEEX.DLL")
 	{
@@ -1319,9 +1637,12 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 		PortableExecutable DLL{ AbsPath };
 		HookBuffer buffer;
 
-		
+		//Log::WriteLine(__FUNCTION__ ": Opening %s as a dll Handle : %08X", UnicodetoANSI(file->cFileName).c_str(), (uint32_t)(FILE*)DLL.GetHandle());
+		//for (auto& [Name, Addr] : DLL.GetExportSymbols())Log::WriteLine(__FUNCTION__ ": %s = %08X", Name.c_str(), Addr);
 
-		//Log::WriteLine(__FUNCTION__ ": Opening %s as a dll Handle : %08X", file->cFileName, (uint32_t)(FILE*)DLL.GetHandle());
+		auto Export = DLL.GetExportSymbols();
+		if (!Export.count("SyringeHandshake"))HasHandshake = false;
+		if (Export.count("SyringeForceLoad"))AlwaysLoad = true;
 
 		auto canLoad = false;
 		auto const hooks = DLL.FindSection(".syhks00");
@@ -1355,11 +1676,27 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 				buffer.add(eip, h);
 			}
 
+			auto const pdbname = AbsPath.substr(0, AbsPath.size() - 4) + ".pdb";
+			std::filesystem::path pdbPath(pdbname);
+			if (std::filesystem::exists(pdbPath))Ext.SetPDBPath(pdbPath.wstring(), (size_t)std::filesystem::file_size(pdbPath));
+			else Ext.SetPDBPath(L"", 0);
+
+			if (!Ext.PDBExists)
+			{
+				auto const mapname = AbsPath.substr(0, AbsPath.size() - 4) + ".map";
+				std::filesystem::path mapPath(mapname);
+				if (std::filesystem::exists(mapPath))Ext.SetMAPPath(mapPath.wstring());
+				else Ext.SetMAPPath(L"");
+			}
+
+			std::filesystem::path AbsPathW(AbsPath);
+			Ext.ModuleName = AbsPathW.wstring();
+
 			Database.CreateLibData(Ext, DLL, fn, AbsPath);
 		}
 
 		if (canLoad) {
-			auto const res = EnableHandshakeCheck ? Handshake(
+			auto const res = (EnableHandshakeCheck && HasHandshake) ? Handshake(
 				DLL.GetFilename(), static_cast<int>(buffer.count),
 				buffer.checksum.value()) : true;
 			if (res)
@@ -1424,7 +1761,7 @@ void SyringeDebugger::FindDLLs()
 	}
 	else if (UseDefaultLoadingPolicy)
 	{
-		Log::WriteLine(__FUNCTION__ ": 使用缺省扩展配置（\"\\Patches\\*.dll\"）。");
+		Log::WriteLine(__FUNCTION__ ": 使用默认扩展配置（\"\\Patches\\*.dll\"）。");
 		std::wstring EDPathAlt = EDPath + L"\\Patches";
 		Log::WriteLine(__FUNCTION__ ": 在目录 \"%s\\Patches\"中搜寻DLL。", ExecutableDirectoryPath().c_str());
 		for (auto file = FindFile((EDPath + L"\\Patches\\*.dll").c_str()); file; ++file) {

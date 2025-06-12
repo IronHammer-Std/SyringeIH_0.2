@@ -133,6 +133,7 @@ public:
 
 	void FindDLLsLoop(const FindFile& file, const std::string& Path, bool AlwaysLoad);
 
+	void InitializeSymbols();
 	void RetrieveInfo();
 	void DebugProcess(std::string_view arguments);
 

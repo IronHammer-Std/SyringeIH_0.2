@@ -2,6 +2,7 @@
 #include "ExtJson.h"
 #include "Log.h"
 #include "Setting.h"
+#include "SyringeDebugger.h"
 
 bool operator<(const HookIdx& A, const HookIdx& B)
 {
@@ -67,9 +68,12 @@ void LibExtData::ReadFromFile(std::string_view FileName, std::string_view DllNam
 	auto Str = GetStringFromFile(FileName.data());
 	if (Str.empty())
 	{
-		Log::WriteLine(" 此DLL不存在配套的 .json 文件。");
+		//Log::WriteLine(" 此DLL不存在配套的 .json 文件。");
 		return;
 	}
+	else Log::WriteLine(" 此DLL存在配套的 .json 文件。");
+
+
 	JsonFile File;
 	auto ErrorStr = File.ParseChecked(Str);
 	if (!File.Available())
@@ -182,7 +186,6 @@ void LibExtData::PushDiasbleHooks(DisableHookIdxSet& Set)
 {
 	Set.Disable(DiasbleHooks);
 }
-
 
 
 

@@ -37,6 +37,7 @@ extern bool EnableHandshakeCheck;
 extern bool DetachAfterInjection;
 extern bool GenerateINJ;
 extern bool CheckInsignificantException;
+extern bool AnalyzeCPPException;
 
 extern std::set<HookIdx> GlobalDisableHooks;
 extern std::set<HookIdx> GlobalEnableHooks;

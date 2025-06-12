@@ -162,6 +162,7 @@
     <ClCompile Include="PortableExecutable.cpp" />
     <ClCompile Include="RemoteDatabase.cpp" />
     <ClCompile Include="Setting.cpp" />
+    <ClCompile Include="SymMap.cpp" />
     <ClCompile Include="SyringeDebugger.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -179,6 +180,7 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="Setting.h" />
     <ClInclude Include="Support.h" />
+    <ClInclude Include="SymMap.h" />
     <ClInclude Include="SyringeDebugger.h" />
   </ItemGroup>
   <ItemGroup>

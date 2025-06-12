@@ -21,6 +21,7 @@ bool EnableHandshakeCheck = true;
 bool DetachAfterInjection = false;
 bool GenerateINJ = false;
 bool CheckInsignificantException = false;
+bool AnalyzeCPPException = true;
 
 std::unordered_map<std::string, ExtensionPack> ExtPacks;
 std::string DefaultExtPack;
@@ -224,6 +225,12 @@ void ReadSetting()
         GenerateINJ = SObj.GetBool();
         Log::WriteLine("GenerateINJ = %s", CStrBoolImpl(GenerateINJ, StrBoolType::Str_true_false));
     }
+    SObj = Obj.GetObjectItem("AnalyzeCPPException");
+    if (SObj.Available() && SObj.IsTypeBool())
+    {
+        AnalyzeCPPException = SObj.GetBool();
+        Log::WriteLine("AnalyzeCPPException = %s", CStrBoolImpl(AnalyzeCPPException, StrBoolType::Str_true_false));
+    }
     SObj = Obj.GetObjectItem("ExtensionPacks");
     if (SObj.Available() && SObj.IsTypeObject())
     {
@@ -313,6 +320,7 @@ else if (v._Starts_with("-" #f "="))\
         UpdateBoolImpl(ExceptionReportAlwaysFull)
         UpdateBoolImpl(RemoteDatabaseDump)
         UpdateBoolImpl(GenerateINJ)
+        UpdateBoolImpl(AnalyzeCPPException)
         else
         {
             Log::WriteLine("Î´ÖªÑ¡Ïî \"%.*s\"", printable(v));
