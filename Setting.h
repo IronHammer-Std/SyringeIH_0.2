@@ -48,9 +48,9 @@ extern std::string DefaultExtPack;
 extern std::string DefaultExecName;
 extern std::string DefaultCmdLine;
 
-constexpr auto const VersionString = "SyringeIH 0.2.3";
-constexpr auto const VersionLString = L"SyringeIH 0.2.3";
+constexpr auto const VersionString = "SyringeIH 0.3b2";
+constexpr auto const VersionLString = L"SyringeIH 0.3b2";
 const int VMajor = 0;
-const int VMinor = 2;
-const int VRelease = 3;
-const int VBuild = 0;
+const int VMinor = 3;
+const int VRelease = 0;
+const int VBuild = 2;
