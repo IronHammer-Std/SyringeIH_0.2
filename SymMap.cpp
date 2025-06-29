@@ -245,6 +245,7 @@ void AddSymbolFromMapFile(HANDLE hProcess, DWORD64 moduleBase, DWORD Size, const
     else
     {
         //output infor hlp
+        /*
         Log::WriteLine(__FUNCTION__": hlp.BaseOfImage = %016llX", hlp.BaseOfImage);
         Log::WriteLine(__FUNCTION__": hlp.ImageSize = %u", hlp.ImageSize);
         Log::WriteLine(__FUNCTION__": hlp.TimeDateStamp = %u", hlp.TimeDateStamp);
@@ -257,6 +258,7 @@ void AddSymbolFromMapFile(HANDLE hProcess, DWORD64 moduleBase, DWORD Size, const
         Log::WriteLine(__FUNCTION__": hlp.NumSyms = %u", hlp.NumSyms);
         Log::WriteLine(__FUNCTION__": hlp.Publics  = %s", hlp.Publics ? "true" : "false");
         Log::WriteLine(__FUNCTION__": hlp.LineNumbers  = %s", hlp.LineNumbers ? "true" : "false");
+        */
     }
 
 
