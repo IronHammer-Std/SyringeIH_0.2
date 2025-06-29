@@ -24,8 +24,8 @@ LANGUAGE LANG_CHINESE, SUBLANG_NEUTRAL
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,2,3,0
- PRODUCTVERSION 0,2,3,0
+ FILEVERSION FILE_VERSION
+ PRODUCTVERSION PRODUCT_VERSION
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -41,13 +41,13 @@ BEGIN
         BLOCK "000404b0"
         BEGIN
             VALUE "CompanyName", "Patrick Dinklage(Original) IronHammer Std(Modified)"
-            VALUE "FileDescription", "Syringe Main Executable"
-            VALUE "FileVersion", "0.2.3.0"
+            VALUE "FileDescription", "Syringe IH " VERSION_STR
+            VALUE "FileVersion", FILE_VERSION_STR
             VALUE "InternalName", "Syringe"
             VALUE "LegalCopyright", "Copyright 2008 - 2017 Patrick Dinklage, DCoder, and AlexB ,Modified by IronHammer Std in 2024-2025"
             VALUE "OriginalFilename", "Syringe.exe"
             VALUE "ProductName", "Syringe"
-            VALUE "ProductVersion", "0.2.3.0"
+            VALUE "ProductVersion", PRODUCT_VERSION_STR
         END
     END
     BLOCK "VarFileInfo"

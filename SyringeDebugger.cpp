@@ -52,6 +52,17 @@ std::wstring UTF8toUnicode(const std::string& UTF8)
 	return ret;
 }
 
+//ANSI字符集转换成Unicode
+std::wstring ANSItoUnicode(const std::string& ANSI)
+{
+	int nLength = MultiByteToWideChar(CP_ACP, 0, ANSI.c_str(), -1, NULL, NULL);   // 获取缓冲区长度，再分配内存
+	WCHAR* tch = new WCHAR[nLength + 4]{};
+	MultiByteToWideChar(CP_ACP, 0, ANSI.c_str(), -1, tch, nLength);     // 将ANSI转换成Unicode
+	std::wstring ret = tch;
+	delete[] tch;
+	return ret;
+}
+
 // UTF-8字符集转换成ANSI
 std::string UTF8toANSI(const std::string& MBCS)
 {
@@ -199,7 +210,6 @@ DWORD __fastcall SyringeDebugger::RelativeOffset(void const* pFrom, void const* 
 	return to - from;
 }
 
-const char ExLib[300] = "SyringeEx.dll";
 const char ExProc[300] = "Initialize";
 
 const BYTE _INIT = 0x00;
@@ -1071,8 +1081,9 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 		if (FirstHook)
 		{
 
-			PatchMem(&GetData()->LibName, ExLib, MaxNameLength);
+			PatchMem(&GetData()->LibName, SyringeExPath.c_str(), MaxNameLength);
 			PatchMem(&GetData()->ProcName, ExProc, MaxNameLength);
+			Log::WriteLine("SyringeExPath = %s", SyringeExPath.c_str());
 			Log::WriteLine(__FUNCTION__ ": 预加载 （%d/%d）SyringeEx.dll", DLLs.size() + 1, DLLs.size() + 1);
 
 			context.Eip = reinterpret_cast<DWORD>(&GetData()->LoadLibraryFunc);
@@ -1088,12 +1099,12 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 		if (loop_LoadLibrary == v_AllHooks.end())
 		{
 			SetEnvironmentVariable("HERE_IS_SYRINGE", "1");
-			auto hSyringeEx = LoadLibraryA(ExLib);
+			auto hSyringeEx = LoadLibraryA(SyringeExPath.c_str());
 			if (!hSyringeEx)
 			{
 				Log::WriteLine("无法注入SyringeEx.dll。Syringe注入代码失败，即将退出……");
 				MessageBoxA(NULL, "无法注入SyringeEx.dll。Syringe注入代码失败，即将退出……", VersionString, MB_OK | MB_ICONERROR);
-				throw_lasterror((DWORD)-1, "");
+				throw_lasterror(ERROR_FILE_NOT_FOUND, "", true);
 			}
 			SetEnvironmentVariable("HERE_IS_SYRINGE", NULL);
 			
@@ -1630,6 +1641,7 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 	{
 		Log::WriteLine(
 			__FUNCTION__ ": 跳过 DLL ：\"%.*s\"", printable(fn));
+		SyringeExPath = AbsPath;
 		return;
 	}
 
@@ -1788,7 +1800,41 @@ void SyringeDebugger::FindDLLs()
 			}
 		}
 	}
+
+	if (SyringeExPath.empty())
+	{
+		Log::WriteLine(__FUNCTION__ ": 没有找到 SyringeEx.dll，请确保它位于可被找到的位置。");
+		MessageBoxW(NULL, L"没有找到 SyringeEx.dll，请确保它位于可被找到的位置。", VersionLString, MB_OK | MB_ICONERROR);
+		throw_lasterror(ERROR_FILE_NOT_FOUND, "SyringeEx.dll", true);
+	}
 	
+	std::unordered_map<std::string, std::string, UpperHash, UpperEqualPred> LibNames;
+	size_t Size = DLLs.size();
+	for (size_t i = 0; i < Size; i++)
+	{
+		if(LibNames.find(DLLShort[i]) == LibNames.end())
+		{
+			LibNames[DLLShort[i]] = DLLs[i];
+		}
+		else
+		{
+			Log::WriteLine(__FUNCTION__ ": 重复的DLL名称：%s", DLLShort[i].c_str());
+			Log::WriteLine(__FUNCTION__ ": 出现于 %s 和 %s", LibNames[DLLShort[i]].c_str(), DLLs[i].c_str());
+			
+			auto Answer = MessageBoxW(NULL, (L"出现了重复的DLL：" + ANSItoUnicode(DLLShort[i]) + L"\n详见 Syringe.log。\n是否继续运行？").c_str(),
+				VersionLString, MB_YESNO | MB_ICONERROR);
+
+			if(Answer == IDYES)
+			{
+				Log::WriteLine(__FUNCTION__ ": 用户选择继续运行。");
+			}
+			else
+			{
+				Log::WriteLine(__FUNCTION__ ": 用户选择停止运行。");
+				throw_lasterror(ERROR_FILE_EXISTS, DLLShort[i], true);
+			}
+		}
+	}
 
 	for (auto& p : Breakpoints )
 	{

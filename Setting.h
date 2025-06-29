@@ -38,7 +38,7 @@ extern bool DetachAfterInjection;
 extern bool GenerateINJ;
 extern bool CheckInsignificantException;
 extern bool AnalyzeCPPException;
-
+extern bool OverwriteStartParams;
 extern std::set<HookIdx> GlobalDisableHooks;
 extern std::set<HookIdx> GlobalEnableHooks;
 
@@ -48,9 +48,4 @@ extern std::string DefaultExtPack;
 extern std::string DefaultExecName;
 extern std::string DefaultCmdLine;
 
-constexpr auto const VersionString = "SyringeIH 0.3b2";
-constexpr auto const VersionLString = L"SyringeIH 0.3b2";
-const int VMajor = 0;
-const int VMinor = 3;
-const int VRelease = 0;
-const int VBuild = 2;
+#include "Version.h"

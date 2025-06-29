@@ -3,6 +3,8 @@
 // Used by res.rc
 //
 
+#include "Version.h"
+
 #define IDI_ICON1                       104
 
 // Next default values for new objects
@@ -15,3 +17,5 @@
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
+
+

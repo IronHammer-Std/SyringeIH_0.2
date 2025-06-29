@@ -129,6 +129,7 @@ public:
 	DWORD NullOutput;
 	bool EverythingIsOK{ false };
 	bool PrepareForDetach{ false };
+	std::string SyringeExPath{ };
 
 
 	void FindDLLsLoop(const FindFile& file, const std::string& Path, bool AlwaysLoad);

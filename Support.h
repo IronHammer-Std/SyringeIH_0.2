@@ -54,6 +54,13 @@ inline auto get_command_line(std::string_view arguments) {
 		{
 			ret.flaglist = SplitView(ret.flags);
 		}
+
+		if (OverwriteStartParams && !DefaultExecName.empty() && !DefaultCmdLine.empty()) {
+			ret.executable = DefaultExecName;
+			ret.arguments = DefaultCmdLine;
+			return ret;
+		}
+
 		if(end_flags != std::string_view::npos) {
 			arguments.remove_prefix(end_flags + 1);
 
@@ -129,21 +136,22 @@ inline auto GetFormatMessage(DWORD const error) {
 }
 
 struct lasterror : std::exception {
-	lasterror(DWORD const error)
-		: error(error)
+	lasterror(DWORD const error, bool Suppress = false)
+		: error(error), SuppressPopup(Suppress)
 	{ }
 
-	lasterror(DWORD const error, std::string insert)
-		: error(error),	insert(std::move(insert))
+	lasterror(DWORD const error, std::string insert, bool Suppress = false)
+		: error(error), insert(std::move(insert)), SuppressPopup(Suppress)
 	{ }
 
 	DWORD error{ 0 };
 	std::string message{ GetFormatMessage(error) };
 	std::string insert;
+	bool SuppressPopup{ false };
 };
 
-[[noreturn]] inline void throw_lasterror(DWORD error_code, std::string insert) {
-	throw lasterror(error_code, std::move(insert));
+[[noreturn]] inline void throw_lasterror(DWORD error_code, std::string insert, bool Suppress = false) {
+	throw lasterror(error_code, std::move(insert), Suppress);
 }
 
 [[noreturn]] inline void throw_lasterror_or(

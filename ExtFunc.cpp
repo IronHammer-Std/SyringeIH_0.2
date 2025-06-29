@@ -112,7 +112,9 @@ void LibExtData::ReadFromFile(std::string_view FileName, std::string_view DllNam
 				strncpy(h.lib, DllName.data(), MaxNameLength);
 				strncpy(h.proc, arr[2].c_str(), MaxNameLength);
 				sscanf(arr[3].c_str(), "%d", &h.num_overridden);
+#pragma warning(disable: 4477)
 				sscanf(arr[1].c_str(), "%X", &h.proc_address);
+#pragma warning(default: 4477)
 				if (arr.size() >= 5)
 				{
 					sscanf(arr[4].c_str(), "%d", &h.Priority);

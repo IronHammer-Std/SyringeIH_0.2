@@ -110,6 +110,9 @@
     <ClInclude Include="SymMap.h">
       <Filter>File</Filter>
     </ClInclude>
+    <ClInclude Include="Version.h">
+      <Filter>Main</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="res.rc">

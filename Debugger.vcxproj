@@ -182,6 +182,7 @@
     <ClInclude Include="Support.h" />
     <ClInclude Include="SymMap.h" />
     <ClInclude Include="SyringeDebugger.h" />
+    <ClInclude Include="Version.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="res.rc" />

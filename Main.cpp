@@ -68,7 +68,7 @@ int Run(std::string_view const arguments) {
 		Log::WriteLine("WinMain: %s (%d)", message.c_str(), e.error);
 
 		auto const msg = std::string(failure) + "\n\n" + message;
-		MessageBoxA(nullptr, msg.c_str(), VersionString, MB_OK | MB_ICONERROR);
+		if(!e.SuppressPopup)MessageBoxA(nullptr, msg.c_str(), VersionString, MB_OK | MB_ICONERROR);
 
 		exit_code = static_cast<long>(e.error);
 	}

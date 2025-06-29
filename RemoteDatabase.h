@@ -15,6 +15,22 @@ struct MemCopyInfo;
 DWORD QuickHashCStr(const char* str);
 DWORD QuickHashCStrUpper(const char* str);
 
+struct UpperHash
+{
+	inline size_t operator()(const std::string& s) const
+	{
+		return QuickHashCStrUpper(s.c_str());
+	}
+};
+
+struct UpperEqualPred
+{
+	inline bool operator ()(const std::string& s1, const std::string& s2) const
+	{
+		return QuickHashCStrUpper(s1.c_str()) == QuickHashCStrUpper(s2.c_str());
+	}
+};
+
 struct RemoteDataHeader
 {
 	int Size;

@@ -22,6 +22,7 @@ bool DetachAfterInjection = false;
 bool GenerateINJ = false;
 bool CheckInsignificantException = false;
 bool AnalyzeCPPException = true;
+bool OverwriteStartParams = false;
 
 std::unordered_map<std::string, ExtensionPack> ExtPacks;
 std::string DefaultExtPack;
@@ -231,6 +232,12 @@ void ReadSetting()
         AnalyzeCPPException = SObj.GetBool();
         Log::WriteLine("AnalyzeCPPException = %s", CStrBoolImpl(AnalyzeCPPException, StrBoolType::Str_true_false));
     }
+    SObj = Obj.GetObjectItem("OverwriteStartParams");
+    if (SObj.Available() && SObj.IsTypeBool())
+    {
+        OverwriteStartParams = SObj.GetBool();
+        Log::WriteLine("OverwriteStartParams = %s", CStrBoolImpl(OverwriteStartParams, StrBoolType::Str_true_false));
+    }
     SObj = Obj.GetObjectItem("ExtensionPacks");
     if (SObj.Available() && SObj.IsTypeObject())
     {
@@ -321,6 +328,7 @@ else if (v._Starts_with("-" #f "="))\
         UpdateBoolImpl(RemoteDatabaseDump)
         UpdateBoolImpl(GenerateINJ)
         UpdateBoolImpl(AnalyzeCPPException)
+		UpdateBoolImpl(OverwriteStartParams)
         else
         {
             Log::WriteLine("Î´ÖªÑ¡Ïî \"%.*s\"", printable(v));
