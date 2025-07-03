@@ -984,6 +984,7 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 			MessageBoxW(NULL, L"Syringe遇到了异常。点击确定以继续运行程序。", VersionLString, MB_OK);
 		}
 	}
+
 }
 
 void SyringeDebugger::PreloadData()
@@ -1278,46 +1279,32 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 
 		return DBG_CONTINUE;
 	}
-	//else if (exceptCode == 114514)
 	else if (exceptCode == EXCEPTION_UNKNOWN_ERROR_1)//非致命的
 	{
-		/*
-		char Buf[260];
-		Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1");
-		GetExceptionWhatSafe(
-			pInfo.hProcess,
-			&dbgEvent.u.Exception.ExceptionRecord,
-			Buf, 
-			sizeof(Buf)
-		);
-		Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1: %s", Buf);
-		*/
-
 		char Buf[260];
 		auto ptr = dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[1];
-		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1  ADDR = %08X", ptr);
-		//MessageBoxA(NULL, "!!", "!!", MB_OK);
 		
-		//read ptr+4 as a pointer REMOTELY
 		LPVOID pRemotePtr;
 		ReadMem(((LPBYTE)ptr) + 4, &pRemotePtr, sizeof(pRemotePtr));
 		ReadMem(pRemotePtr, Buf, sizeof(Buf) - 1);
-		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1: %s", Buf);
 
 		ReadMem(((LPBYTE)ptr), &pRemotePtr, sizeof(pRemotePtr));
 		auto [Rel, DllStr]=AnalyzeAddr((DWORD)pRemotePtr);
 
-		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_UNKNOWN_ERROR_1");
 		Log::WriteLine("程序触发了一个可能已经捕获的异常。（一般不会影响运行）");
 		Log::WriteLine("%s ：%s", DllStr.c_str(), Buf);
-		if(CheckInsignificantException)Handle_StackDump(dbgEvent);
+		if (CheckInsignificantException)
+		{
+			Handle_StackDump(dbgEvent);
+			return Database.InitializeDaemon(false);
+		}
 		return DBG_EXCEPTION_NOT_HANDLED;
 	}
 	else
 	{
 		//Log::WriteLine(__FUNCTION__ ": StackDump");
 		Handle_StackDump(dbgEvent);
-		return DBG_EXCEPTION_NOT_HANDLED;
+		return Database.InitializeDaemon(true);
 	}
 
 	return DBG_CONTINUE;
@@ -1436,6 +1423,16 @@ void SyringeDebugger::Run(std::string_view const arguments)
 			break;
 
 		case OUTPUT_DEBUG_STRING_EVENT:
+			if (dbgEvent.u.DebugString.fUnicode) {
+				Log::WriteLine(
+					__FUNCTION__ ": 输出调试字符串：%s",
+					UnicodetoANSI((const wchar_t*)dbgEvent.u.DebugString.lpDebugStringData).c_str());
+			}
+			else {
+				Log::WriteLine(
+					__FUNCTION__ ": 输出调试字符串：%s",
+					dbgEvent.u.DebugString.lpDebugStringData);
+			}
 			break;
 		}
 

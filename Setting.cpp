@@ -80,7 +80,7 @@ void ReadSetting()
         Log::WriteLine("回退到默认配置。");
         return;
     }
-    auto ErrorStr = Setting.ParseChecked(Str);
+    auto ErrorStr = Setting.ParseChecked(Str, "【出错位置】");
     if (!Setting.Available())
     {
         Log::WriteLine("载入 Syringe.json 失败：非法的 JSON 文件");
@@ -294,7 +294,7 @@ EnableHooks
 void UpdateSetting(const std::vector<std::string_view>& Flags)
 {
     Log::WriteLine("正在从命令行更新配置……");
-    for (int i = 0; i < Flags.size(); i++)
+    for (size_t i = 0; i < Flags.size(); i++)
     {
         auto v = Flags[i];
 #define UpdateBoolImpl(f)\

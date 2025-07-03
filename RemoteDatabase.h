@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <atomic>
 #include <string_view>
 
 class SyringeDebugger;
@@ -44,12 +45,28 @@ struct RemoteDataHeader
 	int AddrDataListOffset;
 	int HookDataListOffset;
 	int CopyMemListOffset;
-	int dwReserved[20];
+	int DaemonDataOffset;
+	int dwReserved[19];
 
 	int HookOpCodeSize;
 	int JmpBackCodeSize;
 };
 static_assert(sizeof(RemoteDataHeader) == 128);
+
+//Daemon Thread Info
+struct DaemonData
+{
+	BOOL EnableDaemon;
+	BOOL OpenAsDaemon;
+	DWORD ThreadID;
+	DWORD lpReportStringW;//at debugged process
+	DWORD lpReportStringWLen;
+	DWORD lpDebugPipeName;//at debugged process
+	DWORD lpDebugPipeNameLen;
+	int dwReserved[9];
+};
+
+static_assert(sizeof(DaemonData) == 64);
 
 struct ExeRemoteData
 {
@@ -239,6 +256,18 @@ private:
 	VirtualMemoryHandle HookMem;
 	SyringeDebugger* Dbg;
 
+	DWORD DaemonDataPtr;
+	std::wstring DaemonReport;
+	VirtualMemoryHandle DaemonReportRemote;
+	VirtualMemoryHandle PipeNameRemote;
+	HANDLE DaemonMutex = NULL;
+	bool DaemonLocked = false;
+	HANDLE DaemonPipe = INVALID_HANDLE_VALUE;
+	bool FinishDaemonLoop = false;
+	bool IsDaemonPipeOpen = false;
+	std::vector<char> DaemonCommBuffer;
+	std::atomic_bool IsDaemonMonitorOpen{ false };
+
 	std::unique_ptr<ExeRemoteData> Exe;
 	std::vector<LibRemoteData> Lib;
 	std::vector<AddrRemoteData> Addr;
@@ -254,6 +283,8 @@ private:
 	DWORD RemoteDBStart, RemoteDBEnd;
 	DoubleInteractData Interact;
 public:
+	static const size_t PipeBufferSize = 32768;// 32KB
+
 	inline AddrRemoteData* GetMem(DWORD HookAddr)
 	{
 		auto it = AddrList.find(HookAddr);
@@ -302,7 +333,22 @@ public:
 	void CopyAndPush(const std::vector<MemCopyInfo>&);
 	void CopyAndPushEnd();
 
-
+	bool EnableDaemon();
+	void EnterDaemonLoop();
+	void PushReportLineToDaemon(const wchar_t* Line);
+	void ClearDaemonReport();
+	void FlushDaemonReport();
+	void StartDaemonWork();
+	void FinishDaemonWork();
+	void OpenDaemonPipe();
+	void CloseDaemonPipe();
+	bool WaitForDaemonConnect();
+	void DaemonCommLoop();
+	void ProcessReceivedMessage(const char* Msg, LONG Error);
+	DWORD InitializeDaemon(bool FromException);
+	DWORD GetDaemonThreadID();
+	void StartDaemonMonitor(bool FromException);
+	void InitPipeName();
 
 	//RUNTIME
 	void SendData();
@@ -325,10 +371,13 @@ public:
 	MemCopyInfo* GetCopyMemName(DWORD RemoteAddr);
 	std::pair<DWORD, std::string> AnalyzeDBAddr(DWORD RemoteAddr);
 	std::pair<DWORD, std::string> AnalyzeHookAddr(DWORD RemoteAddr);
+
+	DWORD GetDaemonDataAddr() const;
 };
 
 
 void RemoteBuf_Load(SyringeDebugger* Dbg, void* Addr, void* Buffer, size_t Size);
+void RemoteBuf_Save(SyringeDebugger* Dbg, void* Addr, void* Buffer, size_t Size);
 
 template<typename T>
 class RemoteBuf
@@ -351,6 +400,17 @@ public:
 	{
 		RemoteBuf_Load(Dbg, Addr, &Buffer, sizeof(T));
 		return Buffer;
+	}
+
+	T* operator->()
+	{
+		RemoteBuf_Load(Dbg, Addr, &Buffer, sizeof(T));
+		return &Buffer;
+	}
+
+	void operator~()
+	{
+		RemoteBuf_Save(Dbg, Addr, &Buffer, sizeof(T));
 	}
 };
 
@@ -382,6 +442,16 @@ public:
 	T& operator[](size_t Idx)
 	{
 		return Buffer[Idx];
+	}
+
+	~RemoteArrayBuf()
+	{
+		if (Buffer)
+		{
+			RemoteBuf_Save(Dbg, Addr, &Buffer, sizeof(T) * (sizeof(Buffer) / sizeof(T)));
+			delete[]Buffer;
+			Buffer = nullptr;
+		}
 	}
 };
 

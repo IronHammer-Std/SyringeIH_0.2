@@ -60,6 +60,9 @@
     <ClCompile Include="SymMap.cpp">
       <Filter>File</Filter>
     </ClCompile>
+    <ClCompile Include="DbgCmdServer.cpp">
+      <Filter>Main</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Handle.h">
@@ -111,6 +114,9 @@
       <Filter>File</Filter>
     </ClInclude>
     <ClInclude Include="Version.h">
+      <Filter>Main</Filter>
+    </ClInclude>
+    <ClInclude Include="DbgCmdServer.h">
       <Filter>Main</Filter>
     </ClInclude>
   </ItemGroup>

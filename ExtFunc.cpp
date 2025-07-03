@@ -75,7 +75,7 @@ void LibExtData::ReadFromFile(std::string_view FileName, std::string_view DllNam
 
 
 	JsonFile File;
-	auto ErrorStr = File.ParseChecked(Str);
+	auto ErrorStr = File.ParseChecked(Str, "【出错位置】");
 	if (!File.Available())
 	{
 		Log::WriteLine("载入 %s 失败：非法的 JSON 文件", FileName.data());

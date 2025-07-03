@@ -321,6 +321,12 @@ static char* print_string_ptr(const char* str, printbuffer* p)
 	*ptr2++ = '\"'; *ptr2++ = 0;
 	return out;
 }
+
+char* print_string_raw(const char* str)
+{
+	return print_string_ptr(str, NULL);
+}
+
 /* Invote print_string_ptr (which is useful) on an item. */
 static char* print_string(cJSON* item, printbuffer* p) { return print_string_ptr(item->valuestring, p); }
 

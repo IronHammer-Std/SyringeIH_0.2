@@ -162,9 +162,8 @@ class JsonFile
 private:
     cJSON* File{ nullptr };
 public:
-    JsonFile() : File(nullptr) {}
+    JsonFile() : File(cJSON_CreateObject()) {}
     JsonFile(cJSON* _F) { File = _F; }
-    JsonFile(JsonObject Obj) { File = Obj.GetRaw(); }
     ~JsonFile() { if (File != nullptr)cJSON_Delete(File); }
 
     operator JsonObject() const { return JsonObject(File); }
@@ -180,7 +179,7 @@ public:
     void Clear() { if (File != nullptr)cJSON_Delete(File); File = nullptr; }
 
     void Parse(std::string Str);
-    std::string ParseChecked(std::string Str);
+    std::string ParseChecked(std::string Str, const std::string& ErrorStr);
     void ParseWithOpts(std::string Str, const char** ReturnParseEnd, int RequireNullTerminated);
     
 #ifdef IHCore
@@ -194,3 +193,5 @@ public:
 
 inline const char* Json_GetErrorPtr() { return cJSON_GetErrorPtr(); }//不理他
 inline void Json_InitHooks(cJSON_Hooks* hooks) { cJSON_InitHooks(hooks); }//不理他
+
+std::string EscapeString(const std::string& str);//  s  t"     -> "s\tt\""

@@ -153,6 +153,7 @@
   <ItemGroup>
     <ClCompile Include="cJSON.c" />
     <ClCompile Include="CRC32.cpp" />
+    <ClCompile Include="DbgCmdServer.cpp" />
     <ClCompile Include="ExtFunc.cpp" />
     <ClCompile Include="ExtJson.cpp" />
     <ClCompile Include="ExtPack.cpp" />
@@ -168,6 +169,7 @@
   <ItemGroup>
     <ClInclude Include="cJSON.h" />
     <ClInclude Include="CRC32.h" />
+    <ClInclude Include="DbgCmdServer.h" />
     <ClInclude Include="ExtFunc.h" />
     <ClInclude Include="ExtJson.h" />
     <ClInclude Include="ExtPack.h" />

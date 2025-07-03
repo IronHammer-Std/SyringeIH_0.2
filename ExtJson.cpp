@@ -193,7 +193,7 @@ void JsonFile::Parse(std::string Str)
 
 #include "Log.h"
 
-std::string JsonFile::ParseChecked(std::string Str)
+std::string JsonFile::ParseChecked(std::string Str, const std::string& ErrorStr)
 {
     const char* ErrorPtr = nullptr;
     std::string Str2 = Str;
@@ -208,7 +208,7 @@ std::string JsonFile::ParseChecked(std::string Str)
             {
                 if (Str.c_str() + j + 1 == ErrorPtr)
                 {
-                    Str2.insert(i + 1, "¡¾³ö´íÎ»ÖÃ¡¿");
+                    Str2.insert(i + 1, ErrorStr);
                     break;
                 }
                 ++j;
@@ -387,43 +387,43 @@ JsonFile JsonObject::SwapNull() const
 }
 JsonFile JsonObject::SwapInt(int Val) const
 {
-    JsonFile F(JsonObject(cJSON_CreateInteger(Val)));
+    JsonFile F(cJSON_CreateInteger(Val));
     cJson_SwapData(F.GetRaw(), Object);
     return F;
 }
 JsonFile JsonObject::SwapDouble(double Val) const
 {
-    JsonFile F(JsonObject(cJSON_CreateNumber(Val)));
+    JsonFile F(cJSON_CreateNumber(Val));
     cJson_SwapData(F.GetRaw(), Object);
     return F;
 }
 JsonFile JsonObject::SwapString(const std::string& Val) const
 {
-    JsonFile F(JsonObject(cJSON_CreateString(Val.c_str())));
+    JsonFile F(cJSON_CreateString(Val.c_str()));
     cJson_SwapData(F.GetRaw(), Object);
     return F;
 }
 JsonFile JsonObject::SwapBool(bool Val) const
 {
-    JsonFile F(JsonObject(cJSON_CreateBool(Val)));
+    JsonFile F(cJSON_CreateBool(Val));
     cJson_SwapData(F.GetRaw(), Object);
     return F;
 }
 JsonFile JsonObject::SwapStrBool(bool Val, StrBoolType Type) const
 {
-    JsonFile F(JsonObject(cJSON_CreateString(CStrBoolImpl(Val, Type))));
+    JsonFile F(cJSON_CreateString(CStrBoolImpl(Val, Type)));
     cJson_SwapData(F.GetRaw(), Object);
     return F;
 }
 JsonFile JsonObject::CopyAndSwap(JsonObject Obj, bool Recurse) const
 {
-    JsonFile F(JsonObject(cJSON_Duplicate(Obj.GetRaw(), Recurse)));
+    JsonFile F(cJSON_Duplicate(Obj.GetRaw(), Recurse));
     cJson_SwapData(F.GetRaw(), Object);
     return F;
 }
 JsonFile JsonObject::RedirectAndSwap(JsonObject Obj)
 {
-    JsonFile F(*this);
+    JsonFile F(this->Object);
     Object = Obj.GetRaw();
     return F;
 }
@@ -541,4 +541,22 @@ void JsonObject::Merge(JsonObject Obj)
             Node = Node.GetNextItem();
         }
     }
+}
+
+extern "C" char* print_string_raw(const char* str);
+
+std::string EscapeString(const std::string& str)
+{
+    auto cs = print_string_raw(str.c_str());
+	std::string ret;
+	if (cs)
+	{
+		ret = cs;
+		cJSON_Free(cs);
+	}
+	else
+	{
+		ret = str;
+	}
+	return ret;
 }

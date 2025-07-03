@@ -132,8 +132,29 @@ private:
 	value_type Value{ Traits::default_value() };
 };
 
+struct ThreadHandle : public Handle<ThreadHandleTraits>
+{
+	using base_type = Handle<ThreadHandleTraits>;
+	using value_type = base_type::value_type;
+
+	explicit ThreadHandle(value_type value) noexcept
+		: base_type(value)
+	{}
+
+	ThreadHandle() noexcept = default;
+
+	DWORD suspend()
+	{
+		return SuspendThread(this->get());
+	}
+
+	DWORD resume()
+	{
+		return ResumeThread(this->get());
+	}
+};
+
 using FileHandle = Handle<FileHandleTraits>;
-using ThreadHandle = Handle<ThreadHandleTraits>;
 using ModuleHandle = Handle<ModuleHandleTraits>;
 using FindHandle = Handle<FindHandleTraits>;
 using LocalAllocHandle = Handle<LocalAllocHandleTraits>;

@@ -265,7 +265,7 @@ void AddSymbolFromMapFile(HANDLE hProcess, DWORD64 moduleBase, DWORD Size, const
     Log::WriteLine(__FUNCTION__ ": moduleBase = %08X", modBase);
     Log::WriteLine(__FUNCTION__ ": symbolCount = %u", symbols.size());
     for (const auto& sym : symbols) {
-        DWORD64 address = moduleBase + sym.address;
+        //DWORD64 address = moduleBase + sym.address;
         //Log::WriteLine(__FUNCTION__ ": Addr=%08X Name=\"%s\"", (DWORD)address, UnicodetoANSI(sym.name).c_str());
         //SymAddSymbolW(hProcess, moduleBase, sym.name.c_str(), address, 0, 0);
         ModuleMap::AddSymbol((DWORD)moduleBase, Size, sym);
@@ -285,7 +285,7 @@ void AddSymbolFromMapFile(HANDLE hProcess, DWORD64 moduleBase, DWORD Size, const
         nullptr
     );
     */
-    ModuleMap::AddBaseName(moduleBase, exeName);
+    ModuleMap::AddBaseName((DWORD)moduleBase, exeName);
 
     Log::WriteLine(__FUNCTION__ ": \"%s\" 已在 %08X 处加载MAP符号。", exeName.c_str(), moduleBase);
 }

@@ -8,6 +8,8 @@
 #include "ExtFunc.h"
 #include <winternl.h>
 #include <algorithm>
+#include "DbgCmdServer.h"
+#include <thread>
 
 
 extern BYTE hook_code_call[40];
@@ -109,6 +111,10 @@ void RemoteDatabase::WriteToStream()
 		++i;
 	}
 
+	auto OfsDaemonData = PushZero(sizeof(DaemonData));
+	Offset<RemoteDataHeader>(OfsHeader).DaemonDataOffset = OfsDaemonData;
+	DaemonDataPtr = OfsDaemonData;
+
 	Interact.FinalOffset = Push(Interact.Transfer);
 }
 
@@ -130,6 +136,7 @@ void RemoteDatabase::ResetPointer(DWORD BaseAddr)
 		ps.second.Begin += BaseAddr;
 		ps.second.End += BaseAddr;
 	}
+	DaemonDataPtr += BaseAddr;
 }
 
 size_t RemoteDatabase::CopyAndPush(DWORD Start, DWORD End)
@@ -221,6 +228,324 @@ void RemoteDatabase::SendData()
 	//Hook.clear();
 	//StrList.clear();
 	//OfsList.clear();
+}
+
+DWORD RemoteDatabase::GetDaemonDataAddr() const
+{
+	return DaemonDataPtr;
+}
+
+void RemoteDatabase::StartDaemonMonitor(bool FromException)
+{
+
+	auto DaemonID = GetDaemonThreadID();
+	for (auto& [ID, Handle] : Dbg->Threads)
+	{
+		if (ID != DaemonID)Handle.Thread.suspend();
+	}
+	InitPipeName();
+	std::thread DaemonMonitor(
+		[this, DaemonID]()
+		{
+			IsDaemonMonitorOpen = true;
+			EnterDaemonLoop();
+			for (auto& [ID, Handle] : Dbg->Threads)
+			{
+				if (ID != DaemonID)Handle.Thread.resume();
+			}
+			IsDaemonMonitorOpen = false;
+		}
+	);
+	DaemonMonitor.detach();
+}
+
+DWORD RemoteDatabase::InitializeDaemon(bool FromException)
+{
+	if (EnableDaemon() && !IsDaemonMonitorOpen)
+	{
+		StartDaemonMonitor(FromException);
+		return DBG_CONTINUE;
+	}
+	else return DBG_EXCEPTION_NOT_HANDLED;
+}
+
+bool RemoteDatabase::EnableDaemon()
+{
+	RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
+	const auto& DaemonData = *rd;
+	auto Enabled = DaemonData.EnableDaemon;
+	return Enabled;
+}
+
+void RemoteDatabase::EnterDaemonLoop()
+{
+	if (!EnableDaemon())return;
+
+	Log::WriteLine(__FUNCTION__ ": 进入守护线程交互循环。");
+	FlushDaemonReport();
+	OpenDaemonPipe();
+	StartDaemonWork();
+	if (WaitForDaemonConnect())
+	{
+		FinishDaemonLoop = false;
+		while (!FinishDaemonLoop)
+			DaemonCommLoop();
+	}
+	FinishDaemonWork();
+	CloseDaemonPipe();
+	Log::WriteLine(__FUNCTION__ ": 离开守护线程交互循环。");
+}
+
+void RemoteDatabase::InitPipeName()
+{
+	char PipeNameStr[1000];
+	sprintf_s(PipeNameStr, "\\\\.\\pipe\\SyringeDaemonPipe_%08X", Dbg->pInfo.dwProcessId);
+	RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
+
+	auto length = (DWORD)strlen(PipeNameStr);
+	rd->lpDebugPipeNameLen = length;
+	~rd;
+
+	VirtualMemoryHandle PipeNameMem = Dbg->AllocMem(nullptr, length + 1);
+	Dbg->PatchMem(PipeNameMem, PipeNameStr, length + 1);
+	PipeNameRemote.swap(PipeNameMem);
+
+	rd->lpDebugPipeName = (DWORD)PipeNameRemote.get();
+	~rd;
+}
+
+void RemoteDatabase::OpenDaemonPipe()
+{
+	char PipeNameStr[1000];
+	sprintf_s(PipeNameStr, "\\\\.\\pipe\\SyringeDaemonPipe_%08X", Dbg->pInfo.dwProcessId);
+	DaemonCommBuffer.resize(PipeBufferSize);
+
+	DaemonPipe = CreateNamedPipeA(
+		PipeNameStr,                  // 管道名称
+		PIPE_ACCESS_DUPLEX |        // 双向访问
+		FILE_FLAG_OVERLAPPED,       // 使用重叠I/O
+		PIPE_TYPE_MESSAGE |         // 消息类型管道
+		PIPE_READMODE_MESSAGE |     // 消息读取模式
+		PIPE_WAIT,                  // 阻塞模式
+		PIPE_UNLIMITED_INSTANCES,   // 最大实例数
+		PipeBufferSize,                // 输出缓冲区大小
+		PipeBufferSize,                // 输入缓冲区大小
+		0,                          // 默认超时时间
+		NULL                        // 默认安全属性
+	);
+
+	if (DaemonPipe == INVALID_HANDLE_VALUE)
+	{
+		Log::WriteLine(__FUNCTION__ ": 创建守护线程管道失败，错误码 %d", GetLastError());
+		IsDaemonPipeOpen = false;
+		return;
+	}
+	Log::WriteLine(__FUNCTION__ ": 创建守护线程管道成功，名称为 %s", PipeNameStr);
+	IsDaemonPipeOpen = true;
+}
+
+bool RemoteDatabase::WaitForDaemonConnect()
+{
+	if (!IsDaemonPipeOpen)return false;
+
+	OVERLAPPED overlapped = {};
+	overlapped.hEvent = CreateEventA(NULL, TRUE, FALSE, NULL);
+
+	// 异步等待客户端连接
+	if (!ConnectNamedPipe(DaemonPipe, &overlapped)) {
+		DWORD error = GetLastError();
+		if (error != ERROR_IO_PENDING && error != ERROR_PIPE_CONNECTED) {
+			Log::WriteLine(__FUNCTION__ ": 等待连接失败，错误码 %d", error);
+			CloseHandle(overlapped.hEvent);
+			return false;
+		}
+	}
+
+	// 等待连接完成
+	DWORD result = WaitForSingleObject(overlapped.hEvent, 6000);
+	CloseHandle(overlapped.hEvent);
+
+	if (result == WAIT_TIMEOUT)
+	{
+		Log::WriteLine(__FUNCTION__ ": 等待连接超时，请检查调试接口。");
+		return false;
+	}
+	else if (result != WAIT_OBJECT_0) 
+	{
+		Log::WriteLine(__FUNCTION__ ": 等待连接失败，错误码 %d", GetLastError());
+		return false;
+	}
+
+	Log::WriteLine(__FUNCTION__ ": 守护线程管道连接成功。");
+	return true;
+}
+
+
+void RemoteDatabase::DaemonCommLoop()
+{
+	//Wait For Data In
+	//Process and Output
+	memset(DaemonCommBuffer.data(), 0, DaemonCommBuffer.size());
+	DWORD bytesRead;
+
+	if (!ReadFile(DaemonPipe, DaemonCommBuffer.data(), DaemonCommBuffer.size(), &bytesRead, NULL)) 
+	{
+		DWORD error = GetLastError();
+		if (error == ERROR_BROKEN_PIPE) {
+			FinishDaemonLoop = true;
+			return;
+		}
+		ProcessReceivedMessage("无法读取指令信息。", error);
+		return;
+	}
+	DaemonCommBuffer[bytesRead] = '\0';
+	Log::WriteLine(__FUNCTION__": 接收到守护线程管道数据：%s", DaemonCommBuffer.data());
+	ProcessReceivedMessage(DaemonCommBuffer.data(), ERROR_SUCCESS);
+}
+
+std::string UTF8toANSI(const std::string& MBCS);
+
+std::string PackErrorMsg(const std::string& Msg, LONG Error)
+{
+	return "{\"Response\":" + EscapeString(Msg) + ",\"Error\":" + std::to_string(Error) + "}";
+}
+
+std::string PackSuccessMsg(const std::string& Msg)
+{
+	return "{\"Response\": " + EscapeString(Msg) + ",\"Error\": 0 }";
+}
+
+void RemoteDatabase::ProcessReceivedMessage(const char* Msg, LONG Error)
+{
+	std::string Result;
+	/*
+	Request:
+	{
+		"Method" : string,
+		"Arguments" : Object
+	}
+	Result:
+	{
+		"Response" : string,
+		"Error" : int
+	}
+	*/
+	DWORD bytesWritten;
+
+	if (Error == ERROR_SUCCESS)
+	{
+		JsonFile Request;
+		auto ErrorStr = Request.ParseChecked(Msg, (const char*)u8"【出错位置】");
+		if (!ErrorStr.empty())
+		{
+			Log::WriteLine(__FUNCTION__ ": 解析请求失败，错误信息：%s", UTF8toANSI(ErrorStr).c_str());
+			Error = ERROR_INVALID_DATA;
+			Result = PackErrorMsg("请求数据语法错误。", Error);
+		}
+		else
+		{
+			auto MethodObj = Request.GetObj().GetObjectItem("Method");
+			auto ArgObj = Request.GetObj().GetObjectItem("Arguments");
+			if (MethodObj.Available() && ArgObj.Available() && MethodObj.IsTypeString() && ArgObj.IsTypeObject())
+			{
+				std::string Method = MethodObj.GetString();
+				auto Res = ProcessDebugCommand(Dbg, Method, ArgObj);
+				std::visit(
+					[&](auto&& arg) {
+						using T = std::decay_t<decltype(arg)>;
+						if constexpr (std::is_same_v<T, JsonFile>)
+						{
+							Result = PackSuccessMsg(arg.GetObj().GetText());
+						}
+						else if constexpr (std::is_same_v<T, std::pair<std::string, LONG>>)
+						{
+							Result = PackErrorMsg(arg.first, arg.second);
+						}
+					},
+					Res
+				);
+			}
+			else
+			{
+				Log::WriteLine(__FUNCTION__ ": 请求数据缺少合法的 Method 或 Arguments 字段。");
+				Error = ERROR_INVALID_DATA;
+				Result = PackErrorMsg("请求数据缺少合法的 Method 或 Arguments 字段。", Error);
+			}
+		}
+	}
+	else Result = PackErrorMsg(Msg, Error);
+
+	Log::WriteLine(__FUNCTION__": 向管道发送数据：%s", Result.c_str());
+
+	if (!WriteFile(DaemonPipe, Result.c_str(),
+		static_cast<DWORD>(Result.size()),
+		&bytesWritten, NULL)) 
+	{
+		Log::WriteLine(__FUNCTION__ ": 无法写入数据。程序试图写入：\n%s", Result.c_str());
+	}
+}
+
+void RemoteDatabase::CloseDaemonPipe()
+{
+	if (IsDaemonPipeOpen)
+	{
+		DisconnectNamedPipe(DaemonPipe);
+		CloseHandle(DaemonPipe);
+		DaemonPipe = INVALID_HANDLE_VALUE;
+	}
+}
+
+DWORD RemoteDatabase::GetDaemonThreadID()
+{
+	RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
+	return rd->ThreadID;
+}
+
+void RemoteDatabase::StartDaemonWork()
+{
+	RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
+	rd->OpenAsDaemon = TRUE;
+	~rd;
+}
+
+void RemoteDatabase::FinishDaemonWork()
+{
+	RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
+	rd->OpenAsDaemon = FALSE;
+	~rd;
+}
+
+void RemoteDatabase::PushReportLineToDaemon(const wchar_t* Line)
+{
+	DaemonReport += Line;
+	DaemonReport += L"\n";
+}
+void RemoteDatabase::ClearDaemonReport()
+{
+	DaemonReport.clear();
+}
+void RemoteDatabase::FlushDaemonReport()
+{
+	if (DaemonReport.empty())
+	{
+		RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
+		auto Ptr = rd->lpReportStringW;
+		char nul[1]{ 0 };
+		Dbg->PatchMem((void*)Ptr, nul, 1); // Clear the previous report string
+	}
+	else
+	{
+		VirtualMemoryHandle NewRptString{ Dbg->AllocMem(nullptr, DaemonReport.size() * sizeof(wchar_t)) };
+		auto Ptr = NewRptString.get();
+		Dbg->PatchMem(Ptr, DaemonReport.c_str(), DaemonReport.size() * sizeof(wchar_t));
+		DaemonReportRemote.swap(NewRptString);
+		RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
+		rd->lpReportStringW = (DWORD)Ptr;
+		~rd;
+		rd->lpReportStringWLen = (DWORD)DaemonReport.size();
+		~rd;
+		ClearDaemonReport();
+	}
 }
 
 void RemoteDatabase::CreateData()
@@ -383,4 +708,9 @@ void PrintModuleList()
 void RemoteBuf_Load(SyringeDebugger* Dbg, void* Addr, void* Buffer, size_t Size)
 {
 	Dbg->ReadMem(Addr, Buffer, Size);
+}
+
+void RemoteBuf_Save(SyringeDebugger* Dbg, void* Addr, void* Buffer, size_t Size)
+{
+	Dbg->PatchMem(Addr, Buffer, Size);
 }
