@@ -267,6 +267,7 @@ private:
 	bool IsDaemonPipeOpen = false;
 	std::vector<char> DaemonCommBuffer;
 	std::atomic_bool IsDaemonMonitorOpen{ false };
+	bool HasTimeOut = false;
 
 	std::unique_ptr<ExeRemoteData> Exe;
 	std::vector<LibRemoteData> Lib;

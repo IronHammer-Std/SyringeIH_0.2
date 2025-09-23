@@ -1,9 +1,9 @@
-#pragma once
+﻿#pragma once
 
 #define VMAJOR 0
 #define VMINOR 3
 #define VRELEASE 0
-#define VBUILD 2
+#define VBUILD 4
 
 #define PRODUCT_VERSION VMAJOR, VMINOR, VRELEASE, VBUILD
 #define FILE_VERSION VMAJOR, VMINOR, VRELEASE, VBUILD

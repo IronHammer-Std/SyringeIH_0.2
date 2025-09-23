@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <string>
 #include <vector>
 #include "ExtFunc.h"
@@ -37,6 +37,7 @@ extern bool EnableHandshakeCheck;
 extern bool DetachAfterInjection;
 extern bool GenerateINJ;
 extern bool CheckInsignificantException;
+extern bool CheckBreakpoint;
 extern bool AnalyzeCPPException;
 extern bool OverwriteStartParams;
 extern std::set<HookIdx> GlobalDisableHooks;

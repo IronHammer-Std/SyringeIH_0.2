@@ -1,4 +1,4 @@
-#include "RemoteDatabase.h"
+ï»¿#include "RemoteDatabase.h"
 #include "SyringeDebugger.h"
 #include "PortableExecutable.h"
 #include "HookAnalyzer.h"
@@ -124,12 +124,12 @@ void RemoteDatabase::ResetPointer(DWORD BaseAddr)
 	for (auto& ps : OfsList)
 	{
 		Offset<DWORD>(ps.first) = ps.second + BaseAddr;
-		//Log::WriteLine(__FUNCTION__ ": ÖØ¶¨Ïò£º[ %d ] : %d -> %d", ps.first, ps.second ,ps.second + BaseAddr);
+		//Log::WriteLine(__FUNCTION__ ": é‡å®šå‘ï¼š[ %d ] : %d -> %d", ps.first, ps.second ,ps.second + BaseAddr);
 	}
 	for (auto& ps : NegOfsList)
 	{
 		Offset<DWORD>(ps.first) = ps.second - BaseAddr;
-		//Log::WriteLine(__FUNCTION__ ": ÖØ¶¨Ïò£º[ %d ] : %d -> %d", ps.first, ps.second ,ps.second + BaseAddr);
+		//Log::WriteLine(__FUNCTION__ ": é‡å®šå‘ï¼š[ %d ] : %d -> %d", ps.first, ps.second ,ps.second + BaseAddr);
 	}
 	for (auto& ps : CopyRangeList)
 	{
@@ -198,13 +198,13 @@ void RemoteDatabase::Dump()
 	FileHandle hd(fopen("RemoteData.dmp", "wb"));
 	if (!hd)
 	{
-		Log::WriteLine(__FUNCTION__ ": ÔËĞĞÇ°ĞÅÏ¢×ª´¢Ê§°Ü¡£", Stm.Size(), Stm.Size());
+		Log::WriteLine(__FUNCTION__ ": è¿è¡Œå‰ä¿¡æ¯è½¬å‚¨å¤±è´¥ã€‚", Stm.Size(), Stm.Size());
 	}
 	else
 	{
 		fwrite(Stm.Data(), 1, Stm.Size(), hd);
 		fflush(hd);
-		Log::WriteLine(__FUNCTION__ ": ÔËĞĞÇ°ĞÅÏ¢ÒÑ×ª´¢µ½RemoteData.dmp¡£", Stm.Size(), Stm.Size());
+		Log::WriteLine(__FUNCTION__ ": è¿è¡Œå‰ä¿¡æ¯å·²è½¬å‚¨åˆ°RemoteData.dmpã€‚", Stm.Size(), Stm.Size());
 	}
 }
 
@@ -213,7 +213,7 @@ void RemoteDatabase::SendData()
 	PushString();
 	Mem = Dbg->AllocMem(nullptr, Stm.Size());
 	RemoteDBStart = (DWORD)Mem.get();
-	Log::WriteLine(__FUNCTION__ ": Ô¶³ÌÏò 0x%08X ´¦·ÖÅäÁË %d (0x%X) ¸ö×Ö½ÚÒÔ´æ´¢ÔËĞĞÇ°ĞÅÏ¢¡£", (DWORD)Mem.get(), Stm.Size(), Stm.Size());
+	Log::WriteLine(__FUNCTION__ ": è¿œç¨‹å‘ 0x%08X å¤„åˆ†é…äº† %d (0x%X) ä¸ªå­—èŠ‚ä»¥å­˜å‚¨è¿è¡Œå‰ä¿¡æ¯ã€‚", (DWORD)Mem.get(), Stm.Size(), Stm.Size());
 	RemoteDBEnd = RemoteDBStart + Stm.Size();
 	ResetPointer((DWORD)Mem.get());
 	Dbg->PatchMem(Mem, Stm.Data(), Stm.Size());
@@ -221,7 +221,7 @@ void RemoteDatabase::SendData()
 	Dbg->Mapper.Header()->DatabaseAddr = RemoteDBStart;
 	//DWORD dw = Dbg->RemoteMapSuffix;
 	//Dbg->PatchMem(ppHeader, &dw, 4);
-	Log::WriteLine(__FUNCTION__ ": Ô¶³ÌÔØÈëÁËÔËĞĞÇ°ĞÅÏ¢¡£", Stm.Size(), Stm.Size());
+	Log::WriteLine(__FUNCTION__ ": è¿œç¨‹è½½å…¥äº†è¿è¡Œå‰ä¿¡æ¯ã€‚", Stm.Size(), Stm.Size());
 
 	//Lib.clear();
 	//Addr.clear();
@@ -237,6 +237,7 @@ DWORD RemoteDatabase::GetDaemonDataAddr() const
 
 void RemoteDatabase::StartDaemonMonitor(bool FromException)
 {
+
 
 	auto DaemonID = GetDaemonThreadID();
 	for (auto& [ID, Handle] : Dbg->Threads)
@@ -261,12 +262,18 @@ void RemoteDatabase::StartDaemonMonitor(bool FromException)
 
 DWORD RemoteDatabase::InitializeDaemon(bool FromException)
 {
-	if (EnableDaemon() && !IsDaemonMonitorOpen)
+	auto Enabled = EnableDaemon();
+	if (Enabled && !IsDaemonMonitorOpen && !HasTimeOut)
 	{
 		StartDaemonMonitor(FromException);
 		return DBG_CONTINUE;
 	}
-	else return DBG_EXCEPTION_NOT_HANDLED;
+	else
+	{
+		if (!Enabled)Log::WriteLine(__FUNCTION__ ": è°ƒè¯•äº¤äº’æœªå¯ç”¨ã€‚");
+		else if(HasTimeOut)Log::WriteLine(__FUNCTION__ ": è°ƒè¯•äº¤äº’å·²æ–­å¼€ã€‚");
+		return DBG_EXCEPTION_NOT_HANDLED;
+	}
 }
 
 bool RemoteDatabase::EnableDaemon()
@@ -281,7 +288,7 @@ void RemoteDatabase::EnterDaemonLoop()
 {
 	if (!EnableDaemon())return;
 
-	Log::WriteLine(__FUNCTION__ ": ½øÈëÊØ»¤Ïß³Ì½»»¥Ñ­»·¡£");
+	Log::WriteLine(__FUNCTION__ ": è¿›å…¥å®ˆæŠ¤çº¿ç¨‹äº¤äº’å¾ªç¯ã€‚");
 	FlushDaemonReport();
 	OpenDaemonPipe();
 	StartDaemonWork();
@@ -293,7 +300,7 @@ void RemoteDatabase::EnterDaemonLoop()
 	}
 	FinishDaemonWork();
 	CloseDaemonPipe();
-	Log::WriteLine(__FUNCTION__ ": Àë¿ªÊØ»¤Ïß³Ì½»»¥Ñ­»·¡£");
+	Log::WriteLine(__FUNCTION__ ": ç¦»å¼€å®ˆæŠ¤çº¿ç¨‹äº¤äº’å¾ªç¯ã€‚");
 }
 
 void RemoteDatabase::InitPipeName()
@@ -321,26 +328,26 @@ void RemoteDatabase::OpenDaemonPipe()
 	DaemonCommBuffer.resize(PipeBufferSize);
 
 	DaemonPipe = CreateNamedPipeA(
-		PipeNameStr,                  // ¹ÜµÀÃû³Æ
-		PIPE_ACCESS_DUPLEX |        // Ë«Ïò·ÃÎÊ
-		FILE_FLAG_OVERLAPPED,       // Ê¹ÓÃÖØµşI/O
-		PIPE_TYPE_MESSAGE |         // ÏûÏ¢ÀàĞÍ¹ÜµÀ
-		PIPE_READMODE_MESSAGE |     // ÏûÏ¢¶ÁÈ¡Ä£Ê½
-		PIPE_WAIT,                  // ×èÈûÄ£Ê½
-		PIPE_UNLIMITED_INSTANCES,   // ×î´óÊµÀıÊı
-		PipeBufferSize,                // Êä³ö»º³åÇø´óĞ¡
-		PipeBufferSize,                // ÊäÈë»º³åÇø´óĞ¡
-		0,                          // Ä¬ÈÏ³¬Ê±Ê±¼ä
-		NULL                        // Ä¬ÈÏ°²È«ÊôĞÔ
+		PipeNameStr,                  // ç®¡é“åç§°
+		PIPE_ACCESS_DUPLEX |        // åŒå‘è®¿é—®
+		FILE_FLAG_OVERLAPPED,       // ä½¿ç”¨é‡å I/O
+		PIPE_TYPE_MESSAGE |         // æ¶ˆæ¯ç±»å‹ç®¡é“
+		PIPE_READMODE_MESSAGE |     // æ¶ˆæ¯è¯»å–æ¨¡å¼
+		PIPE_WAIT,                  // é˜»å¡æ¨¡å¼
+		PIPE_UNLIMITED_INSTANCES,   // æœ€å¤§å®ä¾‹æ•°
+		PipeBufferSize,                // è¾“å‡ºç¼“å†²åŒºå¤§å°
+		PipeBufferSize,                // è¾“å…¥ç¼“å†²åŒºå¤§å°
+		0,                          // é»˜è®¤è¶…æ—¶æ—¶é—´
+		NULL                        // é»˜è®¤å®‰å…¨å±æ€§
 	);
 
 	if (DaemonPipe == INVALID_HANDLE_VALUE)
 	{
-		Log::WriteLine(__FUNCTION__ ": ´´½¨ÊØ»¤Ïß³Ì¹ÜµÀÊ§°Ü£¬´íÎóÂë %d", GetLastError());
+		Log::WriteLine(__FUNCTION__ ": åˆ›å»ºå®ˆæŠ¤çº¿ç¨‹ç®¡é“å¤±è´¥ï¼Œé”™è¯¯ç  %d", GetLastError());
 		IsDaemonPipeOpen = false;
 		return;
 	}
-	Log::WriteLine(__FUNCTION__ ": ´´½¨ÊØ»¤Ïß³Ì¹ÜµÀ³É¹¦£¬Ãû³ÆÎª %s", PipeNameStr);
+	Log::WriteLine(__FUNCTION__ ": åˆ›å»ºå®ˆæŠ¤çº¿ç¨‹ç®¡é“æˆåŠŸï¼Œåç§°ä¸º %s", PipeNameStr);
 	IsDaemonPipeOpen = true;
 }
 
@@ -351,32 +358,33 @@ bool RemoteDatabase::WaitForDaemonConnect()
 	OVERLAPPED overlapped = {};
 	overlapped.hEvent = CreateEventA(NULL, TRUE, FALSE, NULL);
 
-	// Òì²½µÈ´ı¿Í»§¶ËÁ¬½Ó
+	// å¼‚æ­¥ç­‰å¾…å®¢æˆ·ç«¯è¿æ¥
 	if (!ConnectNamedPipe(DaemonPipe, &overlapped)) {
 		DWORD error = GetLastError();
 		if (error != ERROR_IO_PENDING && error != ERROR_PIPE_CONNECTED) {
-			Log::WriteLine(__FUNCTION__ ": µÈ´ıÁ¬½ÓÊ§°Ü£¬´íÎóÂë %d", error);
+			Log::WriteLine(__FUNCTION__ ": ç­‰å¾…è¿æ¥å¤±è´¥ï¼Œé”™è¯¯ç  %d", error);
 			CloseHandle(overlapped.hEvent);
 			return false;
 		}
 	}
 
-	// µÈ´ıÁ¬½ÓÍê³É
-	DWORD result = WaitForSingleObject(overlapped.hEvent, 6000);
+	// ç­‰å¾…è¿æ¥å®Œæˆ
+	DWORD result = WaitForSingleObject(overlapped.hEvent, 2000);
 	CloseHandle(overlapped.hEvent);
 
 	if (result == WAIT_TIMEOUT)
 	{
-		Log::WriteLine(__FUNCTION__ ": µÈ´ıÁ¬½Ó³¬Ê±£¬Çë¼ì²éµ÷ÊÔ½Ó¿Ú¡£");
+		Log::WriteLine(__FUNCTION__ ": ç­‰å¾…è¿æ¥è¶…æ—¶ï¼Œè¯·æ£€æŸ¥è°ƒè¯•æ¥å£ã€‚");
+		HasTimeOut = true;
 		return false;
 	}
 	else if (result != WAIT_OBJECT_0) 
 	{
-		Log::WriteLine(__FUNCTION__ ": µÈ´ıÁ¬½ÓÊ§°Ü£¬´íÎóÂë %d", GetLastError());
+		Log::WriteLine(__FUNCTION__ ": ç­‰å¾…è¿æ¥å¤±è´¥ï¼Œé”™è¯¯ç  %d", GetLastError());
 		return false;
 	}
 
-	Log::WriteLine(__FUNCTION__ ": ÊØ»¤Ïß³Ì¹ÜµÀÁ¬½Ó³É¹¦¡£");
+	Log::WriteLine(__FUNCTION__ ": å®ˆæŠ¤çº¿ç¨‹ç®¡é“è¿æ¥æˆåŠŸã€‚");
 	return true;
 }
 
@@ -395,11 +403,11 @@ void RemoteDatabase::DaemonCommLoop()
 			FinishDaemonLoop = true;
 			return;
 		}
-		ProcessReceivedMessage("ÎŞ·¨¶ÁÈ¡Ö¸ÁîĞÅÏ¢¡£", error);
+		ProcessReceivedMessage("æ— æ³•è¯»å–æŒ‡ä»¤ä¿¡æ¯ã€‚", error);
 		return;
 	}
 	DaemonCommBuffer[bytesRead] = '\0';
-	Log::WriteLine(__FUNCTION__": ½ÓÊÕµ½ÊØ»¤Ïß³Ì¹ÜµÀÊı¾İ£º%s", DaemonCommBuffer.data());
+	Log::WriteLine(__FUNCTION__": æ¥æ”¶åˆ°å®ˆæŠ¤çº¿ç¨‹ç®¡é“æ•°æ®ï¼š%s", DaemonCommBuffer.data());
 	ProcessReceivedMessage(DaemonCommBuffer.data(), ERROR_SUCCESS);
 }
 
@@ -435,12 +443,12 @@ void RemoteDatabase::ProcessReceivedMessage(const char* Msg, LONG Error)
 	if (Error == ERROR_SUCCESS)
 	{
 		JsonFile Request;
-		auto ErrorStr = Request.ParseChecked(Msg, (const char*)u8"¡¾³ö´íÎ»ÖÃ¡¿");
+		auto ErrorStr = Request.ParseChecked(Msg, (const char*)u8"ã€å‡ºé”™ä½ç½®ã€‘");
 		if (!ErrorStr.empty())
 		{
-			Log::WriteLine(__FUNCTION__ ": ½âÎöÇëÇóÊ§°Ü£¬´íÎóĞÅÏ¢£º%s", UTF8toANSI(ErrorStr).c_str());
+			Log::WriteLine(__FUNCTION__ ": è§£æè¯·æ±‚å¤±è´¥ï¼Œé”™è¯¯ä¿¡æ¯ï¼š%s", UTF8toANSI(ErrorStr).c_str());
 			Error = ERROR_INVALID_DATA;
-			Result = PackErrorMsg("ÇëÇóÊı¾İÓï·¨´íÎó¡£", Error);
+			Result = PackErrorMsg("è¯·æ±‚æ•°æ®è¯­æ³•é”™è¯¯ã€‚", Error);
 		}
 		else
 		{
@@ -467,21 +475,21 @@ void RemoteDatabase::ProcessReceivedMessage(const char* Msg, LONG Error)
 			}
 			else
 			{
-				Log::WriteLine(__FUNCTION__ ": ÇëÇóÊı¾İÈ±ÉÙºÏ·¨µÄ Method »ò Arguments ×Ö¶Î¡£");
+				Log::WriteLine(__FUNCTION__ ": è¯·æ±‚æ•°æ®ç¼ºå°‘åˆæ³•çš„ Method æˆ– Arguments å­—æ®µã€‚");
 				Error = ERROR_INVALID_DATA;
-				Result = PackErrorMsg("ÇëÇóÊı¾İÈ±ÉÙºÏ·¨µÄ Method »ò Arguments ×Ö¶Î¡£", Error);
+				Result = PackErrorMsg("è¯·æ±‚æ•°æ®ç¼ºå°‘åˆæ³•çš„ Method æˆ– Arguments å­—æ®µã€‚", Error);
 			}
 		}
 	}
 	else Result = PackErrorMsg(Msg, Error);
 
-	Log::WriteLine(__FUNCTION__": Ïò¹ÜµÀ·¢ËÍÊı¾İ£º%s", Result.c_str());
+	Log::WriteLine(__FUNCTION__": å‘ç®¡é“å‘é€æ•°æ®ï¼š%s", Result.c_str());
 
 	if (!WriteFile(DaemonPipe, Result.c_str(),
 		static_cast<DWORD>(Result.size()),
 		&bytesWritten, NULL)) 
 	{
-		Log::WriteLine(__FUNCTION__ ": ÎŞ·¨Ğ´ÈëÊı¾İ¡£³ÌĞòÊÔÍ¼Ğ´Èë£º\n%s", Result.c_str());
+		Log::WriteLine(__FUNCTION__ ": æ— æ³•å†™å…¥æ•°æ®ã€‚ç¨‹åºè¯•å›¾å†™å…¥ï¼š\n%s", Result.c_str());
 	}
 }
 
@@ -584,7 +592,7 @@ void RemoteDatabase::CreateData()
 		AddrList[pp.first] = &Addr.back();
 	}
 	HookMem = std::move(Dbg->AllocMem(nullptr, HookStm.Size()));
-	Log::WriteLine(__FUNCTION__ ": Ô¶³ÌÏò 0x%08X ·ÖÅäÁË %d(0x%X) ¸ö×Ö½ÚÒÔ´æ´¢¹³×ÓĞÅÏ¢¡£", (DWORD)HookMem.get(), HookStm.Size(), HookStm.Size());
+	Log::WriteLine(__FUNCTION__ ": è¿œç¨‹å‘ 0x%08X åˆ†é…äº† %d(0x%X) ä¸ªå­—èŠ‚ä»¥å­˜å‚¨é’©å­ä¿¡æ¯ã€‚", (DWORD)HookMem.get(), HookStm.Size(), HookStm.Size());
 	for (auto& ad : Addr)
 	{
 		ad.Base.HookDataAddr += (DWORD)HookMem.get();
@@ -656,7 +664,7 @@ std::pair<DWORD, std::string> RemoteDatabase::AnalyzeDBAddr(DWORD RemoteAddr)
 std::pair<DWORD, std::string> RemoteDatabase::AnalyzeHookAddr(DWORD RemoteAddr)
 {
 	if(!InHookRange(RemoteAddr))return std::make_pair(RemoteAddr, "UNKNOWN");
-	return std::make_pair(RemoteAddr- (DWORD)HookMem.get(), "¹³×Ó´úÂë");
+	return std::make_pair(RemoteAddr- (DWORD)HookMem.get(), "é’©å­ä»£ç ");
 }
 
 struct _USTRING

@@ -1,4 +1,4 @@
-#include "Setting.h"
+ï»¿#include "Setting.h"
 #include "ExtJson.h"
 #include "Handle.h"
 #include "Support.h"
@@ -21,6 +21,7 @@ bool EnableHandshakeCheck = true;
 bool DetachAfterInjection = false;
 bool GenerateINJ = false;
 bool CheckInsignificantException = false;
+bool CheckBreakpoint = false;
 bool AnalyzeCPPException = true;
 bool OverwriteStartParams = false;
 
@@ -72,24 +73,24 @@ bool InAddrList(int Addr)
 JsonFile Setting;
 void ReadSetting()
 {
-    Log::WriteLine("ÕıÔÚ´Ó Syringe.json ÖĞÔØÈëÅäÖÃ¡­¡­");
+    Log::WriteLine("æ­£åœ¨ä» Syringe.json ä¸­è½½å…¥é…ç½®â€¦â€¦");
     auto Str = GetStringFromFile("Syringe.json");
     if (Str.empty())
     {
-        Log::WriteLine("ÔØÈë Syringe.json Ê§°Ü£ºÎŞ·¨¶ÁÈ¡ÅäÖÃÎÄ¼ş¡£");
-        Log::WriteLine("»ØÍËµ½Ä¬ÈÏÅäÖÃ¡£");
+        Log::WriteLine("è½½å…¥ Syringe.json å¤±è´¥ï¼šæ— æ³•è¯»å–é…ç½®æ–‡ä»¶ã€‚");
+        Log::WriteLine("å›é€€åˆ°é»˜è®¤é…ç½®ã€‚");
         return;
     }
-    auto ErrorStr = Setting.ParseChecked(Str, "¡¾³ö´íÎ»ÖÃ¡¿");
+    auto ErrorStr = Setting.ParseChecked(Str, "ã€å‡ºé”™ä½ç½®ã€‘");
     if (!Setting.Available())
     {
-        Log::WriteLine("ÔØÈë Syringe.json Ê§°Ü£º·Ç·¨µÄ JSON ÎÄ¼ş");
-        Log::WriteLine("»ØÍËµ½Ä¬ÈÏÅäÖÃ¡£");
+        Log::WriteLine("è½½å…¥ Syringe.json å¤±è´¥ï¼šéæ³•çš„ JSON æ–‡ä»¶");
+        Log::WriteLine("å›é€€åˆ°é»˜è®¤é…ç½®ã€‚");
         if (!ErrorStr.empty())
         {
-            Log::WriteLine("´íÎóĞÅÏ¢£º\"\n%s\"", ErrorStr.c_str());
+            Log::WriteLine("é”™è¯¯ä¿¡æ¯ï¼š\"\n%s\"", ErrorStr.c_str());
             MessageBoxA(
-                nullptr, "Syringe.jsonÓĞ´íÎó¡£Ïê¼ûSyringe.log¡£\n\n",
+                nullptr, "Syringe.jsonæœ‰é”™è¯¯ã€‚è¯¦è§Syringe.logã€‚\n\n",
                 VersionString, MB_OK | MB_ICONINFORMATION);
         }
         return;
@@ -196,6 +197,12 @@ void ReadSetting()
         CheckInsignificantException = SObj.GetBool();
         Log::WriteLine("CheckInsignificantException = %s", CStrBoolImpl(CheckInsignificantException, StrBoolType::Str_true_false));
     }
+	SObj = Obj.GetObjectItem("CheckBreakpoint");
+	if (SObj.Available() && SObj.IsTypeBool())
+	{
+		CheckBreakpoint = SObj.GetBool();
+		Log::WriteLine("CheckBreakpoint = %s", CStrBoolImpl(CheckBreakpoint, StrBoolType::Str_true_false));
+	}
     SObj = Obj.GetObjectItem("OnlyShowStackFrame");
     if (SObj.Available() && SObj.IsTypeBool())
     {
@@ -243,7 +250,7 @@ void ReadSetting()
     {
         for (auto& [name, obj] : SObj.GetMapObject())
         {
-            Log::WriteLine("ÕıÔÚÔØÈëÀ©Õ¹ÅäÖÃ \"%s\"", name.c_str());
+            Log::WriteLine("æ­£åœ¨è½½å…¥æ‰©å±•é…ç½® \"%s\"", name.c_str());
             ExtPacks[name].LoadFromJson(obj);
         }
     }
@@ -265,7 +272,7 @@ void ReadSetting()
         ReadHookIdxSet(GlobalEnableHooks, SObj);
         //LogIdxSet(GlobalEnableHooks, "GlobalEnableHooks");
     }
-    Log::WriteLine("³É¹¦ÔØÈëÅäÖÃ¡£");
+    Log::WriteLine("æˆåŠŸè½½å…¥é…ç½®ã€‚");
 }
 /*
 
@@ -278,6 +285,7 @@ LongStackDump
 EnableHandshakeCheck
 DetachAfterInjection
 CheckInsignificantException
+CheckBreakpoint
 OnlyShowStackFrame
 InfiniteWaitForDebug
 ExceptionReportAlwaysFull
@@ -293,7 +301,7 @@ EnableHooks
 
 void UpdateSetting(const std::vector<std::string_view>& Flags)
 {
-    Log::WriteLine("ÕıÔÚ´ÓÃüÁîĞĞ¸üĞÂÅäÖÃ¡­¡­");
+    Log::WriteLine("æ­£åœ¨ä»å‘½ä»¤è¡Œæ›´æ–°é…ç½®â€¦â€¦");
     for (size_t i = 0; i < Flags.size(); i++)
     {
         auto v = Flags[i];
@@ -316,12 +324,13 @@ else if (v._Starts_with("-" #f "="))\
         {
             v.remove_prefix(5);
             DefaultExtPack = v;
-            Log::WriteLine("¸ü¸ÄÀ©Õ¹ÅäÖÃ \"%.*s\"", printable(v));
+            Log::WriteLine("æ›´æ”¹æ‰©å±•é…ç½® \"%.*s\"", printable(v));
         }
         UpdateBoolImpl(LongStackDump)
         UpdateBoolImpl(EnableHandshakeCheck)
         UpdateBoolImpl(DetachAfterInjection)
         UpdateBoolImpl(CheckInsignificantException)
+        UpdateBoolImpl(CheckBreakpoint)
         UpdateBoolImpl(OnlyShowStackFrame)
         UpdateBoolImpl(InfiniteWaitForDebug)
         UpdateBoolImpl(ExceptionReportAlwaysFull)
@@ -331,9 +340,9 @@ else if (v._Starts_with("-" #f "="))\
 		UpdateBoolImpl(OverwriteStartParams)
         else
         {
-            Log::WriteLine("Î´ÖªÑ¡Ïî \"%.*s\"", printable(v));
+            Log::WriteLine("æœªçŸ¥é€‰é¡¹ \"%.*s\"", printable(v));
         }
 #undef UpdateBoolImpl
     }
-    Log::WriteLine("¸üĞÂÅäÖÃÍê³É¡£");
+    Log::WriteLine("æ›´æ–°é…ç½®å®Œæˆã€‚");
 }

@@ -1,4 +1,4 @@
-#include "SyringeDebugger.h"
+ï»¿#include "SyringeDebugger.h"
 
 #include "CRC32.h"
 #include "FindFile.h"
@@ -17,15 +17,18 @@
 #include <Psapi.h>
 #include <DbgHelp.h>
 
+#pragma comment(lib, "Psapi.lib ")
+
 using namespace std;
 #define EXCEPTION_UNKNOWN_ERROR_1 0xE06D7363
 #define STATUS_FAIL_FAST_EXCEPTION 0xC0000409
+#define MS_VC_EXCEPTION 0x406D1388
 
 std::string UnicodetoANSI(const std::wstring& Unicode)
 {
-	int ANSIlen = WideCharToMultiByte(CP_ACP, 0, Unicode.c_str(), -1, 0, 0, 0, 0);// »ñÈ¡UTF-8±àÂë³¤¶È
+	int ANSIlen = WideCharToMultiByte(CP_ACP, 0, Unicode.c_str(), -1, 0, 0, 0, 0);// è·å–UTF-8ç¼–ç é•¿åº¦
 	char* ANSI = new CHAR[ANSIlen + 4]{};
-	WideCharToMultiByte(CP_ACP, 0, Unicode.c_str(), -1, ANSI, ANSIlen, 0, 0); //×ª»»³ÉUTF-8±àÂë
+	WideCharToMultiByte(CP_ACP, 0, Unicode.c_str(), -1, ANSI, ANSIlen, 0, 0); //è½¬æ¢æˆUTF-8ç¼–ç 
 	std::string ret = ANSI;
 	delete[] ANSI;
 	return ret;
@@ -33,37 +36,37 @@ std::string UnicodetoANSI(const std::wstring& Unicode)
 
 std::string UnicodetoUTF8(const std::wstring& Unicode)
 {
-	int UTF8len = WideCharToMultiByte(CP_UTF8, 0, Unicode.c_str(), -1, 0, 0, 0, 0);// »ñÈ¡UTF-8±àÂë³¤¶È
+	int UTF8len = WideCharToMultiByte(CP_UTF8, 0, Unicode.c_str(), -1, 0, 0, 0, 0);// è·å–UTF-8ç¼–ç é•¿åº¦
 	char* UTF8 = new CHAR[UTF8len + 4]{};
-	WideCharToMultiByte(CP_UTF8, 0, Unicode.c_str(), -1, UTF8, UTF8len, 0, 0); //×ª»»³ÉUTF-8±àÂë
+	WideCharToMultiByte(CP_UTF8, 0, Unicode.c_str(), -1, UTF8, UTF8len, 0, 0); //è½¬æ¢æˆUTF-8ç¼–ç 
 	std::string ret = UTF8;
 	delete[] UTF8;
 	return ret;
 }
 
-// UTF-8×Ö·û¼¯×ª»»³ÉUnicode
+// UTF-8å­—ç¬¦é›†è½¬æ¢æˆUnicode
 std::wstring UTF8toUnicode(const std::string& UTF8)
 {
-	int nLength = MultiByteToWideChar(CP_UTF8, 0, UTF8.c_str(), -1, NULL, NULL);   // »ñÈ¡»º³åÇø³¤¶È£¬ÔÙ·ÖÅäÄÚ´æ
+	int nLength = MultiByteToWideChar(CP_UTF8, 0, UTF8.c_str(), -1, NULL, NULL);   // è·å–ç¼“å†²åŒºé•¿åº¦ï¼Œå†åˆ†é…å†…å­˜
 	WCHAR* tch = new WCHAR[nLength + 4]{};
-	MultiByteToWideChar(CP_UTF8, 0, UTF8.c_str(), -1, tch, nLength);     // ½«UTF-8×ª»»³ÉUnicode
+	MultiByteToWideChar(CP_UTF8, 0, UTF8.c_str(), -1, tch, nLength);     // å°†UTF-8è½¬æ¢æˆUnicode
 	std::wstring ret = tch;
 	delete[] tch;
 	return ret;
 }
 
-//ANSI×Ö·û¼¯×ª»»³ÉUnicode
+//ANSIå­—ç¬¦é›†è½¬æ¢æˆUnicode
 std::wstring ANSItoUnicode(const std::string& ANSI)
 {
-	int nLength = MultiByteToWideChar(CP_ACP, 0, ANSI.c_str(), -1, NULL, NULL);   // »ñÈ¡»º³åÇø³¤¶È£¬ÔÙ·ÖÅäÄÚ´æ
+	int nLength = MultiByteToWideChar(CP_ACP, 0, ANSI.c_str(), -1, NULL, NULL);   // è·å–ç¼“å†²åŒºé•¿åº¦ï¼Œå†åˆ†é…å†…å­˜
 	WCHAR* tch = new WCHAR[nLength + 4]{};
-	MultiByteToWideChar(CP_ACP, 0, ANSI.c_str(), -1, tch, nLength);     // ½«ANSI×ª»»³ÉUnicode
+	MultiByteToWideChar(CP_ACP, 0, ANSI.c_str(), -1, tch, nLength);     // å°†ANSIè½¬æ¢æˆUnicode
 	std::wstring ret = tch;
 	delete[] tch;
 	return ret;
 }
 
-// UTF-8×Ö·û¼¯×ª»»³ÉANSI
+// UTF-8å­—ç¬¦é›†è½¬æ¢æˆANSI
 std::string UTF8toANSI(const std::string& MBCS)
 {
 	return UnicodetoANSI(UTF8toUnicode(MBCS));
@@ -92,7 +95,7 @@ std::pair<DWORD, std::string> SyringeDebugger::AnalyzeAddr(DWORD Addr)
 		{
 			auto Ret = std::make_pair(Addr - LibBase[i].BaseAddr, std::move(UnicodetoANSI(LibBase[i].Name)));
 			auto Res = ResolveFunctionSymbol(pInfo.hProcess, Addr);
-			if (Res.second == L"[Î´Öª]" || Res.first == 0xFFFFFFFF)return Ret;
+			if (Res.second == L"[æœªçŸ¥]" || Res.first == 0xFFFFFFFF)return Ret;
 			else return std::make_pair(Res.first, UnicodetoANSI(LibBase[i].Name + std::wstring(L"!") + Res.second));
 		}
 	}
@@ -100,7 +103,7 @@ std::pair<DWORD, std::string> SyringeDebugger::AnalyzeAddr(DWORD Addr)
 	{
 		auto Ret = std::make_pair(Addr - LibBase.back().BaseAddr, std::move(UnicodetoANSI(LibBase.back().Name)));
 		auto Res = ResolveFunctionSymbol(pInfo.hProcess, Addr);
-		if (Res.second == L"[Î´Öª]" || Res.first == 0xFFFFFFFF)return Ret;
+		if (Res.second == L"[æœªçŸ¥]" || Res.first == 0xFFFFFFFF)return Ret;
 		else return std::make_pair(Res.first, UnicodetoANSI(LibBase.back().Name + std::wstring(L"!") + Res.second));
 	}
 	return std::make_pair(Addr, "UNKNOWN");
@@ -281,7 +284,7 @@ void SyringeDebugger::Handle_ApplyHook()
 
 {
 
-	Log::WriteLine(__FUNCTION__ ": ¿ªÊ¼Æô¶¯DLL£¬²¢´´½¨¹³×Ó¡£");
+	Log::WriteLine(__FUNCTION__ ": å¼€å§‹å¯åŠ¨DLLï¼Œå¹¶åˆ›å»ºé’©å­ã€‚");
 
 	std::vector<BYTE> code;
 
@@ -289,7 +292,7 @@ void SyringeDebugger::Handle_ApplyHook()
 	{
 		auto const p_original_code = static_cast<BYTE*>(it.first);
 
-		//Log::WriteLine("½«ÔÚ 0x%08X ´¦²åÈë¹³×Ó¡£", it.first);
+		//Log::WriteLine("å°†åœ¨ 0x%08X å¤„æ’å…¥é’©å­ã€‚", it.first);
 
 		if (it.first == nullptr || it.first == pcEntryPoint)
 		{
@@ -335,7 +338,7 @@ void SyringeDebugger::Handle_ApplyHook()
 		}
 		else
 		{
-			Log::WriteLine(__FUNCTION__ ":´íÎó£º %X ´¦µÄ¹³×ÓÎŞ·¨»ñÈ¡µ½Ô¤·ÖÅäµÄ¿Õ¼äµØÖ·¡£", p_original_code);
+			Log::WriteLine(__FUNCTION__ ":é”™è¯¯ï¼š %X å¤„çš„é’©å­æ— æ³•è·å–åˆ°é¢„åˆ†é…çš„ç©ºé—´åœ°å€ã€‚", p_original_code);
 			it.second.p_caller_code = AllocMem(nullptr, sz);
 			base = it.second.p_caller_code.get();
 		}
@@ -436,11 +439,11 @@ void SyringeDebugger::Handle_ApplyHook()
 		VirtualProtectEx(pInfo.hProcess, p_original_code, code.size(), PAGE_EXECUTE_READWRITE, &OldProtect);
 		if (PatchMem(p_original_code, code.data(), code.size()))
 		{
-			//Log::WriteLine("ÔÚ 0x%08X ´¦²åÈë¹³×ÓÈë¿Ú¡£", p_original_code);
+			//Log::WriteLine("åœ¨ 0x%08X å¤„æ’å…¥é’©å­å…¥å£ã€‚", p_original_code);
 		}
 		else
 		{
-			Log::WriteLine("ÎŞ·¨ÔÚ 0x%08X ´¦²åÈë¹³×ÓÈë¿Ú¡£", p_original_code);
+			Log::WriteLine("æ— æ³•åœ¨ 0x%08X å¤„æ’å…¥é’©å­å…¥å£ã€‚", p_original_code);
 		}
 		VirtualProtectEx(pInfo.hProcess, p_original_code, code.size(), OldProtect, &OldProtect);
 	}
@@ -450,89 +453,89 @@ void SyringeDebugger::Handle_ApplyHook()
 
 const std::unordered_map<int, std::string> TmpMap
 {
-	{0x10,"½öÖ´ĞĞ"},
-	{0x20,"¶Á/Ö´ĞĞ"},
-	{0x40,"¶Á/Ğ´/Ö´ĞĞ"},
-	{0x80,"Ğ´ÈëÊ±¸´ÖÆ/Ö´ĞĞ"},
-	{0x01,"²»¿É·ÃÎÊ"},
-	{0x02,"Ö»¶Á"},
-	{0x04,"¶Á/Ğ´"},
-	{0x08,"Ğ´ÈëÊ±¸´ÖÆ"},
-	{0x00,"Î´·ÖÅä/ÒÑÊÍ·Å"},
+	{0x10,"ä»…æ‰§è¡Œ"},
+	{0x20,"è¯»/æ‰§è¡Œ"},
+	{0x40,"è¯»/å†™/æ‰§è¡Œ"},
+	{0x80,"å†™å…¥æ—¶å¤åˆ¶/æ‰§è¡Œ"},
+	{0x01,"ä¸å¯è®¿é—®"},
+	{0x02,"åªè¯»"},
+	{0x04,"è¯»/å†™"},
+	{0x08,"å†™å…¥æ—¶å¤åˆ¶"},
+	{0x00,"æœªåˆ†é…/å·²é‡Šæ”¾"},
 };
 
 const std::unordered_map<int, std::string> ExcMap
 {{
-EXCEPTION_ACCESS_VIOLATION,"³ÌĞòÊÔÍ¼Ô½È¨·ÃÎÊÄ³¸öµØÖ·¡£"}, {
-EXCEPTION_ARRAY_BOUNDS_EXCEEDED,"±ß½ç¼ì²é·¢ÏÖÁËÊı×é·ÃÎÊÔ½½ç¡£"}, {
-EXCEPTION_BREAKPOINT,"Óöµ½¶Ïµã¡£"}, {
-EXCEPTION_DATATYPE_MISALIGNMENT,"³ÌĞò³¢ÊÔ¶ÁĞ´Î´¶ÔÆë»ò´íÎó¶ÔÆëµÄÊı¾İ¡£"}, {
-EXCEPTION_FLT_DENORMAL_OPERAND,"¸¡µãÔËËãÊ±£¬ÊÔÍ¼³ıÒÔÎŞ·¨±íÊ¾Îª±ê×¼¸¡µãÖµµÄ¹ıĞ¡¸¡µãÊı¡£"}, {
-EXCEPTION_FLT_DIVIDE_BY_ZERO,"½øĞĞ¸¡µãÊı³ı·¨Ê±ÊÔÍ¼³ıÒÔ0¡£"}, {
-EXCEPTION_FLT_INEXACT_RESULT,"¸¡µãÔËËãµÄ½á¹û³¬Ô½ÁË¿É×¼È·±íÊ¾µÄ·¶Î§¡£"}, {
-EXCEPTION_FLT_INVALID_OPERATION,"Î´ÖªµÄ¸¡µãÔËËã´íÎó¡£"}, {
-EXCEPTION_FLT_OVERFLOW,"²ÎÓë¸¡µãÔËËãµÄÊıÖ¸Êı¹ı´ó¡£"}, {
-EXCEPTION_FLT_STACK_CHECK,"¸¡µãÔËËãÊ±£¬¶ÑÕ»·¢ÉúÁËÉÏÒç»òÏÂÒç¡£"}, {
-EXCEPTION_FLT_UNDERFLOW,"²ÎÓë¸¡µãÔËËãµÄÊıÖ¸Êı¹ıĞ¡¡£"}, {
-EXCEPTION_ILLEGAL_INSTRUCTION,"³ÌĞò³¢ÊÔÖ´ĞĞÎŞĞ§µÄÖ¸Áî»ò²»´æÔÚµÄÖ¸Áî¡£"}, {
-EXCEPTION_IN_PAGE_ERROR,"³ÌĞòÊÔÍ¼·ÃÎÊÏµÍ³ÔİÊ±ÎŞ·¨¼ÓÔØµÄÄÚ´æÒ³Ãæ£¬ÈçÍ¨¹ıÍøÂçÔËĞĞ³ÌĞòÊ±ÍøÂçÁ¬½Ó¶Ï¿ªµÈ¡£"}, {
-EXCEPTION_INT_DIVIDE_BY_ZERO,"½øĞĞÕûÊı³ı·¨Ê±ÊÔÍ¼³ıÒÔ0¡£"}, {
-EXCEPTION_INT_OVERFLOW,"ÕûÊıÔËËãµÄ½á¹û¹ı´ó¶øÉÏÒç¡£"}, {
-EXCEPTION_INVALID_DISPOSITION,"Òì³£´¦Àí³ÌĞò¶ÔÒì³£µÄ´¦ÖÃÎŞĞ§¡£Ê¹ÓÃ¸ß¼¶ÓïÑÔµÄ³ÌĞòÔ±²»Ó¦Óöµ½´ËÒì³£¡£"}, {
-EXCEPTION_NONCONTINUABLE_EXCEPTION,"³ÌĞòÊÔÍ¼ÔÚ·¢ÉúÖÂÃüÒì³£ºó¼ÌĞøÔËĞĞ¡£"}, {
-EXCEPTION_PRIV_INSTRUCTION,"³ÌĞò³¢ÊÔÖ´ĞĞÆäÎŞÈ¨Ö´ĞĞµÄÖ¸Áî¡£"}, {
-EXCEPTION_SINGLE_STEP,"ÕıÔÚµ¥²½µ÷ÊÔÖĞ£¬ÒÑÖ´ĞĞÒ»¸öÖ¸Áî¡£"}, {
-EXCEPTION_STACK_OVERFLOW,"Õ»¿Õ¼ä·¢ÉúÉÏÒç¡£"}, {
-STATUS_FAIL_FAST_EXCEPTION ,"¿ìËÙÊ§°Ü»úÖÆÒªÇó³ÌĞòÁ¢¼´ÍË³ö¡£"}, {
-EXCEPTION_UNKNOWN_ERROR_1 ,"Å×³öµÄC++Òì³£²»±»²¶»ñ£¬¿ÉÄÜÓÉÓÚÈ±ÉÙ¶ÔÓ¦µÄcatch¿é£¬»òC++µÄÔËĞĞÊ±ÅäÖÃ´æÔÚÒì³£¡£"}
+EXCEPTION_ACCESS_VIOLATION,"ç¨‹åºè¯•å›¾è¶Šæƒè®¿é—®æŸä¸ªåœ°å€ã€‚"}, {
+EXCEPTION_ARRAY_BOUNDS_EXCEEDED,"è¾¹ç•Œæ£€æŸ¥å‘ç°äº†æ•°ç»„è®¿é—®è¶Šç•Œã€‚"}, {
+EXCEPTION_BREAKPOINT,"é‡åˆ°æ–­ç‚¹ã€‚"}, {
+EXCEPTION_DATATYPE_MISALIGNMENT,"ç¨‹åºå°è¯•è¯»å†™æœªå¯¹é½æˆ–é”™è¯¯å¯¹é½çš„æ•°æ®ã€‚"}, {
+EXCEPTION_FLT_DENORMAL_OPERAND,"æµ®ç‚¹è¿ç®—æ—¶ï¼Œè¯•å›¾é™¤ä»¥æ— æ³•è¡¨ç¤ºä¸ºæ ‡å‡†æµ®ç‚¹å€¼çš„è¿‡å°æµ®ç‚¹æ•°ã€‚"}, {
+EXCEPTION_FLT_DIVIDE_BY_ZERO,"è¿›è¡Œæµ®ç‚¹æ•°é™¤æ³•æ—¶è¯•å›¾é™¤ä»¥0ã€‚"}, {
+EXCEPTION_FLT_INEXACT_RESULT,"æµ®ç‚¹è¿ç®—çš„ç»“æœè¶…è¶Šäº†å¯å‡†ç¡®è¡¨ç¤ºçš„èŒƒå›´ã€‚"}, {
+EXCEPTION_FLT_INVALID_OPERATION,"æœªçŸ¥çš„æµ®ç‚¹è¿ç®—é”™è¯¯ã€‚"}, {
+EXCEPTION_FLT_OVERFLOW,"å‚ä¸æµ®ç‚¹è¿ç®—çš„æ•°æŒ‡æ•°è¿‡å¤§ã€‚"}, {
+EXCEPTION_FLT_STACK_CHECK,"æµ®ç‚¹è¿ç®—æ—¶ï¼Œå †æ ˆå‘ç”Ÿäº†ä¸Šæº¢æˆ–ä¸‹æº¢ã€‚"}, {
+EXCEPTION_FLT_UNDERFLOW,"å‚ä¸æµ®ç‚¹è¿ç®—çš„æ•°æŒ‡æ•°è¿‡å°ã€‚"}, {
+EXCEPTION_ILLEGAL_INSTRUCTION,"ç¨‹åºå°è¯•æ‰§è¡Œæ— æ•ˆçš„æŒ‡ä»¤æˆ–ä¸å­˜åœ¨çš„æŒ‡ä»¤ã€‚"}, {
+EXCEPTION_IN_PAGE_ERROR,"ç¨‹åºè¯•å›¾è®¿é—®ç³»ç»Ÿæš‚æ—¶æ— æ³•åŠ è½½çš„å†…å­˜é¡µé¢ï¼Œå¦‚é€šè¿‡ç½‘ç»œè¿è¡Œç¨‹åºæ—¶ç½‘ç»œè¿æ¥æ–­å¼€ç­‰ã€‚"}, {
+EXCEPTION_INT_DIVIDE_BY_ZERO,"è¿›è¡Œæ•´æ•°é™¤æ³•æ—¶è¯•å›¾é™¤ä»¥0ã€‚"}, {
+EXCEPTION_INT_OVERFLOW,"æ•´æ•°è¿ç®—çš„ç»“æœè¿‡å¤§è€Œä¸Šæº¢ã€‚"}, {
+EXCEPTION_INVALID_DISPOSITION,"å¼‚å¸¸å¤„ç†ç¨‹åºå¯¹å¼‚å¸¸çš„å¤„ç½®æ— æ•ˆã€‚ä½¿ç”¨é«˜çº§è¯­è¨€çš„ç¨‹åºå‘˜ä¸åº”é‡åˆ°æ­¤å¼‚å¸¸ã€‚"}, {
+EXCEPTION_NONCONTINUABLE_EXCEPTION,"ç¨‹åºè¯•å›¾åœ¨å‘ç”Ÿè‡´å‘½å¼‚å¸¸åç»§ç»­è¿è¡Œã€‚"}, {
+EXCEPTION_PRIV_INSTRUCTION,"ç¨‹åºå°è¯•æ‰§è¡Œå…¶æ— æƒæ‰§è¡Œçš„æŒ‡ä»¤ã€‚"}, {
+EXCEPTION_SINGLE_STEP,"æ­£åœ¨å•æ­¥è°ƒè¯•ä¸­ï¼Œå·²æ‰§è¡Œä¸€ä¸ªæŒ‡ä»¤ã€‚"}, {
+EXCEPTION_STACK_OVERFLOW,"æ ˆç©ºé—´å‘ç”Ÿä¸Šæº¢ã€‚"}, {
+STATUS_FAIL_FAST_EXCEPTION ,"å¿«é€Ÿå¤±è´¥æœºåˆ¶è¦æ±‚ç¨‹åºç«‹å³é€€å‡ºã€‚"}, {
+EXCEPTION_UNKNOWN_ERROR_1 ,"æŠ›å‡ºçš„C++å¼‚å¸¸ä¸è¢«æ•è·ï¼Œå¯èƒ½ç”±äºç¼ºå°‘å¯¹åº”çš„catchå—ï¼Œæˆ–C++çš„è¿è¡Œæ—¶é…ç½®å­˜åœ¨å¼‚å¸¸ã€‚"}
 };
 /*
-¹µ²ÛµÄÎ¢ÈíÖĞÎÄ
+æ²Ÿæ§½çš„å¾®è½¯ä¸­æ–‡
 const std::unordered_map<int, std::string> ExcMap
 {
-{EXCEPTION_ACCESS_VIOLATION,"Ïß³Ì³¢ÊÔ´ÓĞéÄâµØÖ·¶ÁÈ¡»òĞ´ÈëÆäÃ»ÓĞÏàÓ¦·ÃÎÊÈ¨ÏŞµÄĞéÄâµØÖ·¡£"
+{EXCEPTION_ACCESS_VIOLATION,"çº¿ç¨‹å°è¯•ä»è™šæ‹Ÿåœ°å€è¯»å–æˆ–å†™å…¥å…¶æ²¡æœ‰ç›¸åº”è®¿é—®æƒé™çš„è™šæ‹Ÿåœ°å€ã€‚"
 }, {
-EXCEPTION_ARRAY_BOUNDS_EXCEEDED,"Ïß³Ì³¢ÊÔ·ÃÎÊ³¬³ö±ß½çÇÒ»ù´¡Ó²¼şÖ§³Ö±ß½ç¼ì²éµÄÊı×éÔªËØ¡£"
+EXCEPTION_ARRAY_BOUNDS_EXCEEDED,"çº¿ç¨‹å°è¯•è®¿é—®è¶…å‡ºè¾¹ç•Œä¸”åŸºç¡€ç¡¬ä»¶æ”¯æŒè¾¹ç•Œæ£€æŸ¥çš„æ•°ç»„å…ƒç´ ã€‚"
 }, {
-EXCEPTION_BREAKPOINT,"Óöµ½¶Ïµã¡£"
+EXCEPTION_BREAKPOINT,"é‡åˆ°æ–­ç‚¹ã€‚"
 }, {
-EXCEPTION_DATATYPE_MISALIGNMENT,"Ïß³Ì³¢ÊÔ¶ÁÈ¡»òĞ´ÈëÔÚ²»Ìá¹©¶ÔÆëµÄÓ²¼şÉÏÎ´¶ÔÆëµÄÊı¾İ¡£ ÀıÈç£¬16 Î»Öµ±ØĞëÔÚ 2 ×Ö½Ú±ß½çÉÏ¶ÔÆë; 4 ×Ö½Ú±ß½çÉÏµÄ 32 Î»ÖµµÈ¡£"
+EXCEPTION_DATATYPE_MISALIGNMENT,"çº¿ç¨‹å°è¯•è¯»å–æˆ–å†™å…¥åœ¨ä¸æä¾›å¯¹é½çš„ç¡¬ä»¶ä¸Šæœªå¯¹é½çš„æ•°æ®ã€‚ ä¾‹å¦‚ï¼Œ16 ä½å€¼å¿…é¡»åœ¨ 2 å­—èŠ‚è¾¹ç•Œä¸Šå¯¹é½; 4 å­—èŠ‚è¾¹ç•Œä¸Šçš„ 32 ä½å€¼ç­‰ã€‚"
 }, {
-EXCEPTION_FLT_DENORMAL_OPERAND,"¸¡µãÔËËãÖĞµÄÒ»¸ö²Ù×÷ÊıÊÇ·´³£ÔËËã¡£ ·Ç¹æ·¶ÖµÌ«Ğ¡£¬ÎŞ·¨±íÊ¾Îª±ê×¼¸¡µãÖµ¡£"
+EXCEPTION_FLT_DENORMAL_OPERAND,"æµ®ç‚¹è¿ç®—ä¸­çš„ä¸€ä¸ªæ“ä½œæ•°æ˜¯åå¸¸è¿ç®—ã€‚ éè§„èŒƒå€¼å¤ªå°ï¼Œæ— æ³•è¡¨ç¤ºä¸ºæ ‡å‡†æµ®ç‚¹å€¼ã€‚"
 }, {
-EXCEPTION_FLT_DIVIDE_BY_ZERO,"Ïß³Ì³¢ÊÔ½«¸¡µãÖµ³ıÒÔ 0 µÄ¸¡µã³ıÊı¡£"
+EXCEPTION_FLT_DIVIDE_BY_ZERO,"çº¿ç¨‹å°è¯•å°†æµ®ç‚¹å€¼é™¤ä»¥ 0 çš„æµ®ç‚¹é™¤æ•°ã€‚"
 }, {
-EXCEPTION_FLT_INEXACT_RESULT,"¸¡µãÔËËãµÄ½á¹û²»ÄÜÍêÈ«±íÊ¾ÎªĞ¡Êıµã¡£"
+EXCEPTION_FLT_INEXACT_RESULT,"æµ®ç‚¹è¿ç®—çš„ç»“æœä¸èƒ½å®Œå…¨è¡¨ç¤ºä¸ºå°æ•°ç‚¹ã€‚"
 }, {
-EXCEPTION_FLT_INVALID_OPERATION,"´ËÒì³£±íÊ¾´ËÁĞ±íÖĞÎ´°üº¬µÄÈÎºÎ¸¡µãÒì³£¡£"
+EXCEPTION_FLT_INVALID_OPERATION,"æ­¤å¼‚å¸¸è¡¨ç¤ºæ­¤åˆ—è¡¨ä¸­æœªåŒ…å«çš„ä»»ä½•æµ®ç‚¹å¼‚å¸¸ã€‚"
 }, {
-EXCEPTION_FLT_OVERFLOW,"¸¡µãÔËËãµÄÖ¸Êı´óÓÚÏàÓ¦ÀàĞÍÔÊĞíµÄÁ¿¼¶¡£"
+EXCEPTION_FLT_OVERFLOW,"æµ®ç‚¹è¿ç®—çš„æŒ‡æ•°å¤§äºç›¸åº”ç±»å‹å…è®¸çš„é‡çº§ã€‚"
 }, {
-EXCEPTION_FLT_STACK_CHECK,"¶ÑÕ»Òò¸¡µãÔËËã¶øÒç³ö»òÏÂÒç¡£"
+EXCEPTION_FLT_STACK_CHECK,"å †æ ˆå› æµ®ç‚¹è¿ç®—è€Œæº¢å‡ºæˆ–ä¸‹æº¢ã€‚"
 }, {
-EXCEPTION_FLT_UNDERFLOW,"¸¡µãÔËËãµÄÖ¸ÊıĞ¡ÓÚÏàÓ¦ÀàĞÍÔÊĞíµÄÁ¿¼¶¡£"
+EXCEPTION_FLT_UNDERFLOW,"æµ®ç‚¹è¿ç®—çš„æŒ‡æ•°å°äºç›¸åº”ç±»å‹å…è®¸çš„é‡çº§ã€‚"
 }, {
-EXCEPTION_ILLEGAL_INSTRUCTION,"Ïß³Ì³¢ÊÔÖ´ĞĞÎŞĞ§Ö¸Áî¡£"
+EXCEPTION_ILLEGAL_INSTRUCTION,"çº¿ç¨‹å°è¯•æ‰§è¡Œæ— æ•ˆæŒ‡ä»¤ã€‚"
 }, {
-EXCEPTION_IN_PAGE_ERROR,"Ïß³Ì³¢ÊÔ·ÃÎÊ²»´æÔÚµÄÒ³Ãæ£¬µ«ÏµÍ³ÎŞ·¨¼ÓÔØ¸ÃÒ³¡£ ÀıÈç£¬Èç¹ûÔÚÍ¨¹ıÍøÂçÔËĞĞ³ÌĞòÊ±ÍøÂçÁ¬½Ó¶Ï¿ª£¬Ôò¿ÉÄÜ»á·¢Éú´ËÒì³£¡£"
+EXCEPTION_IN_PAGE_ERROR,"çº¿ç¨‹å°è¯•è®¿é—®ä¸å­˜åœ¨çš„é¡µé¢ï¼Œä½†ç³»ç»Ÿæ— æ³•åŠ è½½è¯¥é¡µã€‚ ä¾‹å¦‚ï¼Œå¦‚æœåœ¨é€šè¿‡ç½‘ç»œè¿è¡Œç¨‹åºæ—¶ç½‘ç»œè¿æ¥æ–­å¼€ï¼Œåˆ™å¯èƒ½ä¼šå‘ç”Ÿæ­¤å¼‚å¸¸ã€‚"
 }, {
-EXCEPTION_INT_DIVIDE_BY_ZERO,"Ïß³Ì³¢ÊÔ½«ÕûÊıÖµ³ıÒÔÁãµÄÕûÊı³ıÊı¡£"
+EXCEPTION_INT_DIVIDE_BY_ZERO,"çº¿ç¨‹å°è¯•å°†æ•´æ•°å€¼é™¤ä»¥é›¶çš„æ•´æ•°é™¤æ•°ã€‚"
 }, {
-EXCEPTION_INT_OVERFLOW,"ÕûÊıÔËËãµÄ½á¹ûµ¼ÖÂÖ´ĞĞ½á¹ûÖĞ×îÖØÒªµÄÎ»¡£"
+EXCEPTION_INT_OVERFLOW,"æ•´æ•°è¿ç®—çš„ç»“æœå¯¼è‡´æ‰§è¡Œç»“æœä¸­æœ€é‡è¦çš„ä½ã€‚"
 }, {
-EXCEPTION_INVALID_DISPOSITION,"Òì³£´¦Àí³ÌĞòÏòÒì³£µ÷¶È³ÌĞò·µ»ØÁËÎŞĞ§´¦ÖÃ¡£ Ê¹ÓÃ¸ß¼¶ÓïÑÔ£¨Èç C£©µÄ³ÌĞòÔ±²»Ó¦Óöµ½´ËÒì³£¡£"
+EXCEPTION_INVALID_DISPOSITION,"å¼‚å¸¸å¤„ç†ç¨‹åºå‘å¼‚å¸¸è°ƒåº¦ç¨‹åºè¿”å›äº†æ— æ•ˆå¤„ç½®ã€‚ ä½¿ç”¨é«˜çº§è¯­è¨€ï¼ˆå¦‚ Cï¼‰çš„ç¨‹åºå‘˜ä¸åº”é‡åˆ°æ­¤å¼‚å¸¸ã€‚"
 }, {
-EXCEPTION_NONCONTINUABLE_EXCEPTION,"Ïß³Ì³¢ÊÔÔÚ·¢Éú²»¿ÉÁ¬ĞøµÄÒì³£ºó¼ÌĞøÖ´ĞĞ¡£"
+EXCEPTION_NONCONTINUABLE_EXCEPTION,"çº¿ç¨‹å°è¯•åœ¨å‘ç”Ÿä¸å¯è¿ç»­çš„å¼‚å¸¸åç»§ç»­æ‰§è¡Œã€‚"
 }, {
-EXCEPTION_PRIV_INSTRUCTION,"Ïß³Ì³¢ÊÔÖ´ĞĞÔÚµ±Ç°¼ÆËã»úÄ£Ê½ÏÂ²»ÔÊĞíÆä²Ù×÷µÄÖ¸Áî¡£"
+EXCEPTION_PRIV_INSTRUCTION,"çº¿ç¨‹å°è¯•æ‰§è¡Œåœ¨å½“å‰è®¡ç®—æœºæ¨¡å¼ä¸‹ä¸å…è®¸å…¶æ“ä½œçš„æŒ‡ä»¤ã€‚"
 }, {
-EXCEPTION_SINGLE_STEP,"¸ú×ÙÏİÚå»òÆäËûµ¥Ö¸Áî»úÖÆÖ¸Ê¾ÒÑÖ´ĞĞÒ»¸öÖ¸Áî¡£"
+EXCEPTION_SINGLE_STEP,"è·Ÿè¸ªé™·é˜±æˆ–å…¶ä»–å•æŒ‡ä»¤æœºåˆ¶æŒ‡ç¤ºå·²æ‰§è¡Œä¸€ä¸ªæŒ‡ä»¤ã€‚"
 }, {
-EXCEPTION_STACK_OVERFLOW,"Ïß³ÌÕ¼ÓÃÁËÆä¶ÑÕ»¡£"
+EXCEPTION_STACK_OVERFLOW,"çº¿ç¨‹å ç”¨äº†å…¶å †æ ˆã€‚"
 }, {
-0xC0000409 ,"´æÔÚÎ´²¶»ñµÄ¿ìËÙÒì³£¡£"}//STATUS_FAIL_FAST_EXCEPTION E06D7363
+0xC0000409 ,"å­˜åœ¨æœªæ•è·çš„å¿«é€Ÿå¼‚å¸¸ã€‚"}//STATUS_FAIL_FAST_EXCEPTION E06D7363
 , {
-EXCEPTION_UNKNOWN_ERROR_1 ,"Ä³¶Î´úÂëÅ×³öÁËÒ»¸öÒì³££¬µ«Ã»ÓĞÈË²¶»ñËü£»Ò²ºÜ¿ÉÄÜÊÇC++µÄÔËĞĞÊ±ÅäÖÃ´æÔÚÒì³£¡£"}
+EXCEPTION_UNKNOWN_ERROR_1 ,"æŸæ®µä»£ç æŠ›å‡ºäº†ä¸€ä¸ªå¼‚å¸¸ï¼Œä½†æ²¡æœ‰äººæ•è·å®ƒï¼›ä¹Ÿå¾ˆå¯èƒ½æ˜¯C++çš„è¿è¡Œæ—¶é…ç½®å­˜åœ¨å¼‚å¸¸ã€‚"}
 };
 */
 
@@ -544,14 +547,14 @@ std::string GetAccessStr(HANDLE hProc, LPCVOID Ptr)
 		auto it = TmpMap.find(BInfo.Protect);
 		if (it == TmpMap.cend())
 		{
-			return "Î´ÖªÈ¨ÏŞ£¨ÇëËÑË÷¡°ÄÚ´æ±£»¤ÊôĞÔ³£Á¿¡±ÒÔÈ·¶¨´ËÖµµÄº¬Òå£©£º" + std::to_string(BInfo.Protect);
+			return "æœªçŸ¥æƒé™ï¼ˆè¯·æœç´¢â€œå†…å­˜ä¿æŠ¤å±æ€§å¸¸é‡â€ä»¥ç¡®å®šæ­¤å€¼çš„å«ä¹‰ï¼‰ï¼š" + std::to_string(BInfo.Protect);
 		}
 		else
 		{
 			return it->second;
 		}
 	}
-	else return "»ñÈ¡Ê§°Ü";
+	else return "è·å–å¤±è´¥";
 }
 
 bool IsExecutable(HANDLE hProc, LPCVOID Ptr)
@@ -570,7 +573,7 @@ std::string GetExcStr(int Exc)
 	auto it = ExcMap.find(Exc);
 	if (it == ExcMap.cend())
 	{
-		return "Î´Öª";
+		return "æœªçŸ¥";
 	}
 	else
 	{
@@ -584,22 +587,22 @@ bool LoadSymbolsForDLL(HANDLE hProcess, const std::wstring& dllName, const std::
 	if (ForceLoad)SymSetOptions(Orig | SYMOPT_LOAD_ANYTHING);
 	struct __Helper { DWORD Orig; bool ForceLoad;~__Helper() { if (ForceLoad)SymSetOptions(Orig); }}HLP{ Orig, ForceLoad };
 
-	// ÉèÖÃ·ûºÅËÑË÷Â·¾¶
+	// è®¾ç½®ç¬¦å·æœç´¢è·¯å¾„
 	if (!SymSetSearchPathW(hProcess, pdbPath.c_str())) 
 	{
-		Log::WriteLine(__FUNCTION__ ": SymSetSearchPath ÉèÖÃÊ§°Ü£¬´íÎóÂë %d", GetLastError());
+		Log::WriteLine(__FUNCTION__ ": SymSetSearchPath è®¾ç½®å¤±è´¥ï¼Œé”™è¯¯ç  %d", GetLastError());
 	}
 
 
-	// ¼ÓÔØÄ£¿é·ûºÅ
+	// åŠ è½½æ¨¡å—ç¬¦å·
 	DWORD64 modBase = SymLoadModuleExW(
 		hProcess,
 		NULL,
 		pdbPath.c_str(),
 		dllName.c_str(),
 		baseAddr,
-		Size,        // ×Ô¶¯È·¶¨´óĞ¡
-		nullptr,   // ²»ĞèÒª¶îÍâÊı¾İ
+		Size,        // è‡ªåŠ¨ç¡®å®šå¤§å°
+		nullptr,   // ä¸éœ€è¦é¢å¤–æ•°æ®
 		0
 	);
 
@@ -607,7 +610,7 @@ bool LoadSymbolsForDLL(HANDLE hProcess, const std::wstring& dllName, const std::
 	hlp.SizeOfStruct = sizeof(hlp);
 	if (!SymGetModuleInfoW64(hProcess, baseAddr, &hlp))
 	{
-		Log::WriteLine(__FUNCTION__ ": SymGetModuleInfoW64 »ñÈ¡Ä£¿éĞÅÏ¢Ê§°Ü£¬´íÎóÂë %d", GetLastError());
+		Log::WriteLine(__FUNCTION__ ": SymGetModuleInfoW64 è·å–æ¨¡å—ä¿¡æ¯å¤±è´¥ï¼Œé”™è¯¯ç  %d", GetLastError());
 		//return false;
 	}
 	else
@@ -615,15 +618,15 @@ bool LoadSymbolsForDLL(HANDLE hProcess, const std::wstring& dllName, const std::
 		//output infor hlp
 		Log::WriteLine(__FUNCTION__": hlp.BaseOfImage = %016llX", hlp.BaseOfImage);
 		Log::WriteLine(__FUNCTION__": hlp.ImageSize = %u", hlp.ImageSize);
-		Log::WriteLine(__FUNCTION__": hlp.TimeDateStamp = %u", hlp.TimeDateStamp);
-		Log::WriteLine(__FUNCTION__": hlp.CheckSum = %u", hlp.CheckSum);
-		Log::WriteLine(__FUNCTION__": hlp.ModuleName = %s", UnicodetoANSI(hlp.ModuleName).c_str());
-		Log::WriteLine(__FUNCTION__": hlp.ImageName = %s", UnicodetoANSI(hlp.ImageName).c_str());
-		Log::WriteLine(__FUNCTION__": hlp.LoadedImageName = %s", UnicodetoANSI(hlp.LoadedImageName).c_str());
-		Log::WriteLine(__FUNCTION__": hlp.TypeInfo = %s", hlp.TypeInfo ? "true" : "false");
-		Log::WriteLine(__FUNCTION__": hlp.SymType = %d", hlp.SymType);
+		//Log::WriteLine(__FUNCTION__": hlp.TimeDateStamp = %u", hlp.TimeDateStamp);
+		//Log::WriteLine(__FUNCTION__": hlp.CheckSum = %u", hlp.CheckSum);
+		//Log::WriteLine(__FUNCTION__": hlp.ModuleName = %s", UnicodetoANSI(hlp.ModuleName).c_str());
+		//Log::WriteLine(__FUNCTION__": hlp.ImageName = %s", UnicodetoANSI(hlp.ImageName).c_str());
+		//Log::WriteLine(__FUNCTION__": hlp.LoadedImageName = %s", UnicodetoANSI(hlp.LoadedImageName).c_str());
+		//Log::WriteLine(__FUNCTION__": hlp.TypeInfo = %s", hlp.TypeInfo ? "true" : "false");
+		//Log::WriteLine(__FUNCTION__": hlp.SymType = %d", hlp.SymType);
 		Log::WriteLine(__FUNCTION__": hlp.NumSyms = %u", hlp.NumSyms);
-		Log::WriteLine(__FUNCTION__": hlp.Publics  = %s", hlp.Publics ? "true" : "false");
+		//Log::WriteLine(__FUNCTION__": hlp.Publics  = %s", hlp.Publics ? "true" : "false");
 		Log::WriteLine(__FUNCTION__": hlp.LineNumbers  = %s", hlp.LineNumbers ? "true" : "false");
 		
 		/*
@@ -642,12 +645,12 @@ bool LoadSymbolsForDLL(HANDLE hProcess, const std::wstring& dllName, const std::
 	}
 
 	if (modBase == 0) {
-		Log::WriteLine(__FUNCTION__ ": SymLoadModuleEx Ê§°Ü, ´íÎóÂë %d", GetLastError());
-		Log::WriteLine(__FUNCTION__ ": ¼ÓÔØPDB: \"%s\"", UnicodetoANSI(pdbPath).c_str());
+		Log::WriteLine(__FUNCTION__ ": SymLoadModuleEx å¤±è´¥, é”™è¯¯ç  %d", GetLastError());
+		Log::WriteLine(__FUNCTION__ ": åŠ è½½PDB: \"%s\"", UnicodetoANSI(pdbPath).c_str());
 		Log::WriteLine(__FUNCTION__ ": DLL: \"%s\"", UnicodetoANSI(dllName).c_str());
-		Log::WriteLine(__FUNCTION__ ": »ùÖ·: %08X", baseAddr);
-		Log::WriteLine(__FUNCTION__ ": ÎÄ¼ş´óĞ¡: %u", Size);
-		// ³¢ÊÔÖ±½ÓÍ¨¹ıÂ·¾¶¼ÓÔØ
+		Log::WriteLine(__FUNCTION__ ": åŸºå€: %08X", baseAddr);
+		Log::WriteLine(__FUNCTION__ ": æ–‡ä»¶å¤§å°: %u", Size);
+		// å°è¯•ç›´æ¥é€šè¿‡è·¯å¾„åŠ è½½
 		modBase = SymLoadModuleExW(
 			hProcess,
 			NULL,
@@ -662,28 +665,28 @@ bool LoadSymbolsForDLL(HANDLE hProcess, const std::wstring& dllName, const std::
 		hlp.SizeOfStruct = sizeof(hlp);
 		if (!SymGetModuleInfoW64(hProcess, baseAddr, &hlp))
 		{
-			Log::WriteLine(__FUNCTION__ ": SymGetModuleInfoW64 »ñÈ¡Ä£¿éĞÅÏ¢Ê§°Ü£¬´íÎóÂë %d", GetLastError());
+			Log::WriteLine(__FUNCTION__ ": SymGetModuleInfoW64 è·å–æ¨¡å—ä¿¡æ¯å¤±è´¥ï¼Œé”™è¯¯ç  %d", GetLastError());
 			//return false;
 		}
 
 		if (modBase == 0) {
-			Log::WriteLine(__FUNCTION__ ": DLL ÔØÈë·ûºÅÊ§°Ü, ´íÎóÂë %d", GetLastError());
+			Log::WriteLine(__FUNCTION__ ": DLL è½½å…¥ç¬¦å·å¤±è´¥, é”™è¯¯ç  %d", GetLastError());
 			return false;
 		}
 	}
 
-	Log::WriteLine(__FUNCTION__ ": \"%s\" ÒÑÔÚ %08X ´¦¼ÓÔØPDB·ûºÅ¡£", UnicodetoANSI(dllName).c_str(), modBase);
+	Log::WriteLine(__FUNCTION__ ": \"%s\" å·²åœ¨ %08X å¤„åŠ è½½PDBç¬¦å·ã€‚", UnicodetoANSI(dllName).c_str(), modBase);
 	return true;
 }
 
-std::string GetFileName(const std::string& ss)//ÎÄ¼şÃû
+std::string GetFileName(const std::string& ss)//æ–‡ä»¶å
 {
 	using namespace std;
 	auto p = ss.find_last_of('\\');
 	return p == ss.npos ? ss : string(ss.begin() + min(p + 1, ss.length()), ss.end());
 }
 
-std::wstring GetFileName(const std::wstring& ss)//ÎÄ¼şÃû
+std::wstring GetFileName(const std::wstring& ss)//æ–‡ä»¶å
 {
 	using namespace std;
 	auto p = ss.find_last_of('\\');
@@ -694,7 +697,7 @@ std::pair<DWORD, std::wstring>  ResolveFunctionSymbol(HANDLE hProcess, DWORD add
 	
 	
 	
-// ×¼±¸·ûºÅ»º³åÇø
+// å‡†å¤‡ç¬¦å·ç¼“å†²åŒº
 	SYMBOL_INFOW* pSymbol = (SYMBOL_INFOW*)malloc(sizeof(SYMBOL_INFOW) + MAX_SYM_NAME * sizeof(wchar_t));
 	if (!pSymbol) return { 0, L"" };
 
@@ -703,16 +706,16 @@ std::pair<DWORD, std::wstring>  ResolveFunctionSymbol(HANDLE hProcess, DWORD add
 
 	DWORD64 displacement = 0;
 
-	// ³¢ÊÔ»ñÈ¡Ô´ÎÄ¼şĞÅÏ¢
+	// å°è¯•è·å–æºæ–‡ä»¶ä¿¡æ¯
 	IMAGEHLP_LINEW64 line;
 	line.SizeOfStruct = sizeof(IMAGEHLP_LINEW64);
 	DWORD lineDisplacement;
 	bool HasLine = false;
 	if (SymGetLineFromAddrW64(hProcess, address, &lineDisplacement, &line)) {
-		HasLine = true;//return { DWORD(displacement), std::wstring(L"[Ô´] ") + line.FileName + L":" + std::to_wstring(line.LineNumber) };
+		HasLine = true;//return { DWORD(displacement), std::wstring(L"[æº] ") + line.FileName + L":" + std::to_wstring(line.LineNumber) };
 	}
 	else {
-		//Log::WriteLine(__FUNCTION__ ": SymGetLineFromAddrW64 »ñÈ¡Ô´ÎÄ¼şĞÅÏ¢Ê§°Ü£¬´íÎóÂë %d", GetLastError());
+		//Log::WriteLine(__FUNCTION__ ": SymGetLineFromAddrW64 è·å–æºæ–‡ä»¶ä¿¡æ¯å¤±è´¥ï¼Œé”™è¯¯ç  %d", GetLastError());
 	}
 
 
@@ -723,24 +726,24 @@ std::pair<DWORD, std::wstring>  ResolveFunctionSymbol(HANDLE hProcess, DWORD add
 		{
 			result += L'{';
 			result += GetFileName(line.FileName);
-			result += L"£¬ĞĞ";
+			result += L"ï¼Œè¡Œ";
 			result += std::to_wstring(line.LineNumber);
 			result += L'}';
 		}
 		return { DWORD(displacement), result };
 	}
 	else {
-		//Log::WriteLine(__FUNCTION__ ": SymFromAddrW »ñÈ¡·ûºÅÊ§°Ü£¬´íÎóÂë %d", GetLastError());
+		//Log::WriteLine(__FUNCTION__ ": SymFromAddrW è·å–ç¬¦å·å¤±è´¥ï¼Œé”™è¯¯ç  %d", GetLastError());
 	}
 
 	free(pSymbol);
 
 	if (HasLine)
 	{
-		return { DWORD(lineDisplacement), std::wstring(L"[Ô´] ") + line.FileName + L":" + std::to_wstring(line.LineNumber) };
+		return { DWORD(lineDisplacement), std::wstring(L"[æº] ") + line.FileName + L":" + std::to_wstring(line.LineNumber) };
 	}
 
-	return { address, L"[Î´Öª]" };
+	return { address, L"[æœªçŸ¥]" };
 }
 
 const std::wstring& ExecutableDirectoryPathW();
@@ -754,7 +757,7 @@ void SyringeDebugger::InitializeSymbols()
 	SymSetOptions(SYMOPT_DEBUG | SYMOPT_UNDNAME | SYMOPT_LOAD_LINES);
 	if (!SymInitialize(pInfo.hProcess, nullptr, FALSE)) 
 	{
-		Log::WriteLine(__FUNCTION__ ": ÎŞ·¨³õÊ¼»¯·ûºÅÒıÇæ£¬´íÎó´úÂë: %d", GetLastError());
+		Log::WriteLine(__FUNCTION__ ": æ— æ³•åˆå§‹åŒ–ç¬¦å·å¼•æ“ï¼Œé”™è¯¯ä»£ç : %d", GetLastError());
 		return;
 	}
 
@@ -804,7 +807,7 @@ void SyringeDebugger::InitializeSymbols()
 
 
 	//for(auto& [k,v]: LibAddr)
-	//	Log::WriteLine("ÒÑ¼ÓÔØ¿â£º%s »ùÖ·£º0x%08X", k.c_str(), v);
+	//	Log::WriteLine("å·²åŠ è½½åº“ï¼š%s åŸºå€ï¼š0x%08X", k.c_str(), v);
 
 	for (auto& [Name, Lib] : LibExt)
 	{
@@ -851,16 +854,32 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 
 	InitializeSymbols();
 
+	auto& rcd = dbgEvent.u.Exception.ExceptionRecord;
+	//--HOTFIX--
+	{
+		Log::WriteLine(__FUNCTION__ ": Exception Data :");
+		Log::WriteLine(__FUNCTION__ ": ADDR %08X CODE %08X FLAG %08X", rcd.ExceptionAddress, rcd.ExceptionCode, rcd.ExceptionFlags);
+		Log::WriteLine(__FUNCTION__ ": PARAM %d", rcd.NumberParameters);
+		for (DWORD i = 0; i < 15; ++i)
+		{
+			auto [Rel, Str] = AnalyzeAddr(rcd.ExceptionInformation[i]);
+			Log::WriteLine(__FUNCTION__ ": %d : 0x%08Xï¼ˆ%s+%Xï¼‰[è®¿é—®æƒé™ï¼š%s]", i, rcd.ExceptionInformation[i], Str.c_str(), Rel, 
+				GetAccessStr(pInfo.hProcess, (LPCVOID)rcd.ExceptionInformation[i]).c_str());
+		}
+	}
+
+
+
 	auto [Rel, Str] = AnalyzeAddr((DWORD)exceptAddr);
 	Log::WriteLine(
-		__FUNCTION__ ": ·¢ÉúÒì³££¬´úÂë: 0x%08X ", exceptCode);
+		__FUNCTION__ ": å‘ç”Ÿå¼‚å¸¸ï¼Œä»£ç : 0x%08X ", exceptCode);
 	Log::WriteLine(
-		"(¿ÉÄÜÔ­Òò£º%s)", GetExcStr(exceptCode).c_str());
+		"(å¯èƒ½åŸå› ï¼š%s)", GetExcStr(exceptCode).c_str());
 	Log::WriteLine(
-		"µØÖ·£º 0x%08X£¨%s+%X£©[·ÃÎÊÈ¨ÏŞ£º%s]", 
+		"åœ°å€ï¼š 0x%08Xï¼ˆ%s+%Xï¼‰[è®¿é—®æƒé™ï¼š%s]", 
 		exceptAddr, Str.c_str(), Rel, GetAccessStr(pInfo.hProcess, exceptAddr).c_str());
-	if (IsExecutable(pInfo.hProcess, (LPCVOID)exceptAddr))Log::WriteLine("·¢ÉúÒì³£µÄµØÖ·Îª¿ÉÖ´ĞĞµÄ´úÂë¡£");
-	else Log::WriteLine("·¢ÉúÒì³£µÄµØÖ·²»ÊÇ´úÂë£¬¿ÉÄÜÎª·ÖÅäµÄÄÚ´æ¡£");
+	if (IsExecutable(pInfo.hProcess, (LPCVOID)exceptAddr))Log::WriteLine("å‘ç”Ÿå¼‚å¸¸çš„åœ°å€ä¸ºå¯æ‰§è¡Œçš„ä»£ç ã€‚");
+	else Log::WriteLine("å‘ç”Ÿå¼‚å¸¸çš„åœ°å€ä¸æ˜¯ä»£ç ï¼Œå¯èƒ½ä¸ºåˆ†é…çš„å†…å­˜ã€‚");
 	if (ExceptionReportAlwaysFull || !bAVLogged)
 	{
 		//Log::WriteLine(__FUNCTION__ ": ACCESS VIOLATION at 0x%08X!", exceptAddr);
@@ -870,18 +889,18 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 		char const* access = nullptr;
 		switch (dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[0])
 		{
-		case 0: access = "¶ÁÈ¡"; break;
-		case 1: access = "Ğ´Èë"; break;
-		case 8: access = "Ö´ĞĞ"; break;
+		case 0: access = "è¯»å–"; break;
+		case 1: access = "å†™å…¥"; break;
+		case 8: access = "æ‰§è¡Œ"; break;
 		}
 
 		auto [Rel2, Str2] = AnalyzeAddr((DWORD)AccessAddr);
-		Log::WriteLine("³ÌĞòÊÔÍ¼%s 0x%08X£¨%s+%X£©[·ÃÎÊÈ¨ÏŞ£º%s]¡£",
-			access ? access : ("<Î´ÖªĞĞÎª£º" + std::to_string(dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[0]) + ">").c_str(),
+		Log::WriteLine("ç¨‹åºè¯•å›¾%s 0x%08Xï¼ˆ%s+%Xï¼‰[è®¿é—®æƒé™ï¼š%s]ã€‚",
+			access ? access : ("<æœªçŸ¥è¡Œä¸ºï¼š" + std::to_string(dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[0]) + ">").c_str(),
 			AccessAddr, Str2.c_str(), Rel2,
 			GetAccessStr(pInfo.hProcess, (LPCVOID)AccessAddr).c_str());
-		if (IsExecutable(pInfo.hProcess, (LPCVOID)AccessAddr))Log::WriteLine("ÊÔÍ¼·ÃÎÊµÄµØÖ·Îª¿ÉÖ´ĞĞµÄ´úÂë¡£");
-		else Log::WriteLine("ÊÔÍ¼·ÃÎÊµÄµØÖ·²»ÊÇ´úÂë£¬¿ÉÄÜÎª·ÖÅäµÄÄÚ´æ¡£");
+		if (IsExecutable(pInfo.hProcess, (LPCVOID)AccessAddr))Log::WriteLine("è¯•å›¾è®¿é—®çš„åœ°å€ä¸ºå¯æ‰§è¡Œçš„ä»£ç ã€‚");
+		else Log::WriteLine("è¯•å›¾è®¿é—®çš„åœ°å€ä¸æ˜¯ä»£ç ï¼Œå¯èƒ½ä¸ºåˆ†é…çš„å†…å­˜ã€‚");
 
 
 		CONTEXT context;
@@ -889,7 +908,7 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 		GetThreadContext(currentThread, &context);
 
 		Log::WriteLine();
-		Log::WriteLine("¼Ä´æÆ÷£º");
+		Log::WriteLine("å¯„å­˜å™¨ï¼š");
 		Log::WriteLine("\tEAX = 0x%08X\tECX = 0x%08X\tEDX = 0x%08X",
 			context.Eax, context.Ecx, context.Edx);
 		Log::WriteLine("\tEBX = 0x%08X\tESP = 0x%08X\tEBP = 0x%08X",
@@ -900,7 +919,7 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 
 
 
-		Log::WriteLine("\t¶ÑÕ»×ª´¢ĞÅÏ¢£º£¨°´¿ÉÄÜµÄÕ»Ö¡·Ö¶Î£©");
+		Log::WriteLine("\tå †æ ˆè½¬å‚¨ä¿¡æ¯ï¼šï¼ˆæŒ‰å¯èƒ½çš„æ ˆå¸§åˆ†æ®µï¼‰");
 		auto const esp = reinterpret_cast<DWORD*>(context.Esp);
 		auto const eend = LongStackDump ? (DWORD*)0xFFFFFFFF : esp + 0x100;
 		bool PrevHook = false;
@@ -916,7 +935,7 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 					{
 						if (PrevHook)
 						{
-							Log::WriteLine("£¨¹³×ÓµØÖ·Îª%X£©", dw);
+							Log::WriteLine("ï¼ˆé’©å­åœ°å€ä¸º%Xï¼‰", dw);
 							PrevHook = false;
 						}
 						else if (!OnlyShowStackFrame)
@@ -927,7 +946,7 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 						continue;
 					}
 					if (Database.InHookRange(dw))PrevHook = true;
-					Log::WriteLine("\t0x%08X:\t0x%08X £¨%s+%X£©[·ÃÎÊÈ¨ÏŞ£º%s]", 
+					Log::WriteLine("\t0x%08X:\t0x%08X ï¼ˆ%s+%Xï¼‰[è®¿é—®æƒé™ï¼š%s]", 
 						p, dw, Str1.c_str(), Rel1,
 						GetAccessStr(pInfo.hProcess, (LPCVOID)dw).c_str());
 				}
@@ -941,7 +960,7 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 				{
 					break;
 				}
-				Log::WriteLine("\t0x%08X:\t£¨ÎŞ·¨¶ÁÈ¡£©", p);
+				Log::WriteLine("\t0x%08X:\tï¼ˆæ— æ³•è¯»å–ï¼‰", p);
 			}
 		}
 		Log::WriteLine();
@@ -979,9 +998,9 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 		bAVLogged = true;
 		if (InfiniteWaitForDebug)
 		{	
-			Log::WriteLine("SyringeÕıÔÚµÈ´ıµ÷ÊÔ¡­¡­");
+			Log::WriteLine("Syringeæ­£åœ¨ç­‰å¾…è°ƒè¯•â€¦â€¦");
 			Log::Flush();
-			MessageBoxW(NULL, L"SyringeÓöµ½ÁËÒì³£¡£µã»÷È·¶¨ÒÔ¼ÌĞøÔËĞĞ³ÌĞò¡£", VersionLString, MB_OK);
+			MessageBoxW(NULL, L"Syringeé‡åˆ°äº†å¼‚å¸¸ã€‚ç‚¹å‡»ç¡®å®šä»¥ç»§ç»­è¿è¡Œç¨‹åºã€‚", VersionLString, MB_OK);
 		}
 	}
 
@@ -1005,25 +1024,25 @@ void SyringeDebugger::PreloadData()
 
 	if (RunningYR)
 	{
-		Log::WriteLine(__FUNCTION__ ": ÕıÔÚĞ´ÈëÔËĞĞÇ°ĞÅÏ¢¡­¡­");
-		//Log::WriteLine(__FUNCTION__ ": ¼Ù¶¨Æô¶¯ÁË±ê×¼µÄYR V1.001¡£");
+		Log::WriteLine(__FUNCTION__ ": æ­£åœ¨å†™å…¥è¿è¡Œå‰ä¿¡æ¯â€¦â€¦");
+		//Log::WriteLine(__FUNCTION__ ": å‡å®šå¯åŠ¨äº†æ ‡å‡†çš„YR V1.001ã€‚");
 		Database.CreateData();
-		Log::WriteLine(__FUNCTION__ ": ÔËĞĞÇ°ĞÅÏ¢´´½¨Íê±Ï¡£");
+		Log::WriteLine(__FUNCTION__ ": è¿è¡Œå‰ä¿¡æ¯åˆ›å»ºå®Œæ¯•ã€‚");
 		Database.WriteToStream();
 		for (auto& p : LibExt)Database.CopyAndPush(p.second.GetMemCopy());
 		Database.CopyAndPushEnd();
-		Log::WriteLine(__FUNCTION__ ": ÔËĞĞÇ°ĞÅÏ¢´ò°üÍê±Ï¡£");
+		Log::WriteLine(__FUNCTION__ ": è¿è¡Œå‰ä¿¡æ¯æ‰“åŒ…å®Œæ¯•ã€‚");
 		Database.SendData();
-		Log::WriteLine(__FUNCTION__ ": ÔËĞĞÇ°ĞÅÏ¢Ğ´ÈëÍê±Ï¡£");
+		Log::WriteLine(__FUNCTION__ ": è¿è¡Œå‰ä¿¡æ¯å†™å…¥å®Œæ¯•ã€‚");
 	}
 
 
 	if (GenerateINJ)
 	{
-		Log::WriteLine(__FUNCTION__ ": ÕıÔÚ´´½¨INJÎÄ¼ş¡­¡­");
+		Log::WriteLine(__FUNCTION__ ": æ­£åœ¨åˆ›å»ºINJæ–‡ä»¶â€¦â€¦");
 		if(Analyzer.GenerateINJ())
-			Log::WriteLine(__FUNCTION__ ": INJÎÄ¼ş´´½¨Íê³É¡£");
-		else Log::WriteLine(__FUNCTION__ ": INJÎÄ¼ş´´½¨Ê§°Ü¡£");
+			Log::WriteLine(__FUNCTION__ ": INJæ–‡ä»¶åˆ›å»ºå®Œæˆã€‚");
+		else Log::WriteLine(__FUNCTION__ ": INJæ–‡ä»¶åˆ›å»ºå¤±è´¥ã€‚");
 	}
 }
 
@@ -1068,7 +1087,7 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 			PatchMem(&GetData()->LibName, ExLoadingLib, MaxNameLength);
 			PatchMem(&GetData()->ProcName, ExProc, MaxNameLength);
 
-			Log::WriteLine(__FUNCTION__ ": Ô¤¼ÓÔØ £¨%d/%d£©%s", LoadedCount + 1, DLLs.size() + 1, DLLShort[LoadedCount].c_str());
+			Log::WriteLine(__FUNCTION__ ": é¢„åŠ è½½ ï¼ˆ%d/%dï¼‰%s", LoadedCount + 1, DLLs.size() + 1, DLLShort[LoadedCount].c_str());
 			LoadedCount++;
 
 			context.Eip = reinterpret_cast<DWORD>(&GetData()->LoadLibraryFunc);
@@ -1085,7 +1104,7 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 			PatchMem(&GetData()->LibName, SyringeExPath.c_str(), MaxNameLength);
 			PatchMem(&GetData()->ProcName, ExProc, MaxNameLength);
 			Log::WriteLine("SyringeExPath = %s", SyringeExPath.c_str());
-			Log::WriteLine(__FUNCTION__ ": Ô¤¼ÓÔØ £¨%d/%d£©SyringeEx.dll", DLLs.size() + 1, DLLs.size() + 1);
+			Log::WriteLine(__FUNCTION__ ": é¢„åŠ è½½ ï¼ˆ%d/%dï¼‰SyringeEx.dll", DLLs.size() + 1, DLLs.size() + 1);
 
 			context.Eip = reinterpret_cast<DWORD>(&GetData()->LoadLibraryFunc);
 			FirstHook = false;
@@ -1096,15 +1115,15 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 			return DBG_CONTINUE;
 		}
 #pragma warning(push)
-#pragma warning(disable:4244)//ÆÁ±ÎÓĞ¹ØtoupperµÄ¾¯¸æ
+#pragma warning(disable:4244)//å±è”½æœ‰å…³toupperçš„è­¦å‘Š
 		if (loop_LoadLibrary == v_AllHooks.end())
 		{
 			SetEnvironmentVariable("HERE_IS_SYRINGE", "1");
 			auto hSyringeEx = LoadLibraryA(SyringeExPath.c_str());
 			if (!hSyringeEx)
 			{
-				Log::WriteLine("ÎŞ·¨×¢ÈëSyringeEx.dll¡£Syringe×¢Èë´úÂëÊ§°Ü£¬¼´½«ÍË³ö¡­¡­");
-				MessageBoxA(NULL, "ÎŞ·¨×¢ÈëSyringeEx.dll¡£Syringe×¢Èë´úÂëÊ§°Ü£¬¼´½«ÍË³ö¡­¡­", VersionString, MB_OK | MB_ICONERROR);
+				Log::WriteLine("æ— æ³•æ³¨å…¥SyringeEx.dllã€‚Syringeæ³¨å…¥ä»£ç å¤±è´¥ï¼Œå³å°†é€€å‡ºâ€¦â€¦");
+				MessageBoxA(NULL, "æ— æ³•æ³¨å…¥SyringeEx.dllã€‚Syringeæ³¨å…¥ä»£ç å¤±è´¥ï¼Œå³å°†é€€å‡ºâ€¦â€¦", VersionString, MB_OK | MB_ICONERROR);
 				throw_lasterror(ERROR_FILE_NOT_FOUND, "", true);
 			}
 			SetEnvironmentVariable("HERE_IS_SYRINGE", NULL);
@@ -1119,7 +1138,7 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 				auto pArr = Mapper.OffsetPtr<SharedMemRecord>(sizeof(SharedMemHeader));
 				for (size_t i = 0; i < DLLShort.size(); i++)
 				{
-					Log::WriteLine("Í¨¹ıSyringeÔØÈëµÄDLL: %s = 0x%08X", DLLShort[i].c_str(), pArr[i].BaseAddr);
+					Log::WriteLine("é€šè¿‡Syringeè½½å…¥çš„DLL: %s = 0x%08X", DLLShort[i].c_str(), pArr[i].BaseAddr);
 					std::transform(DLLShort[i].begin(), DLLShort[i].end(), DLLShort[i].begin(), ::toupper);
 					//LibAddr[DLLShort[i]] = pArr[i].BaseAddr;
 				}
@@ -1127,7 +1146,7 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 				LibBase.resize(Mapper.Header()->DllRecordCount);
 				//Log::WriteLine("All DLL: at 0x%08X", Mapper.Header()->DllRecordAddr);
 				if (!ReadMem((LPCVOID)Mapper.Header()->DllRecordAddr, (LPVOID)LibBase.data(), Mapper.Header()->DllRecordCount * sizeof(SharedMemRecord)))
-					Log::WriteLine(__FUNCTION__ ": ÔØÈëDLL¶ÁÈëÊ§°Ü¡£");
+					Log::WriteLine(__FUNCTION__ ": è½½å…¥DLLè¯»å…¥å¤±è´¥ã€‚");
 				std::sort(LibBase.begin(), LibBase.end(), [](const auto& lhs, const auto& rhs)->bool
 					{
 						return lhs.BaseAddr < rhs.BaseAddr;
@@ -1138,7 +1157,7 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 					auto Str = UnicodetoANSI(p.Name);
 					std::transform(Str.begin(), Str.end(), Str.begin(), ::toupper);
 					LibAddr[Str] = p.BaseAddr;
-					Log::WriteLine("»ñÈ¡Ä£¿é£¨%d/%d£©£º%hs = 0x%08X", j, LibBase.size(), Str.c_str(), p.BaseAddr);
+					Log::WriteLine("è·å–æ¨¡å—ï¼ˆ%d/%dï¼‰ï¼š%hs = 0x%08X", j, LibBase.size(), Str.c_str(), p.BaseAddr);
 					++j;
 				}
 
@@ -1153,13 +1172,13 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 						auto ait = LibAddr.find(i.RelativeLib);
 						if (ait == LibAddr.end())
 						{
-							Log::WriteLine(__FUNCTION__ ": ÎŞ·¨ÔØÈëÏà¶Ô¹³×Ó£ºÀ´×Ô¿â\"%s\"µÄº¯Êı\"%s\"ÊÔÍ¼´ÓÎ´Í¨¹ıSyringeÔØÈëµÄ\"%s\"Ñ°Ö·¡£", i.lib, i.proc, i.RelativeLib);
+							Log::WriteLine(__FUNCTION__ ": æ— æ³•è½½å…¥ç›¸å¯¹é’©å­ï¼šæ¥è‡ªåº“\"%s\"çš„å‡½æ•°\"%s\"è¯•å›¾ä»æœªé€šè¿‡Syringeè½½å…¥çš„\"%s\"å¯»å€ã€‚", i.lib, i.proc, i.RelativeLib);
 							continue;
 						}
 						auto& hks = Breakpoints[(LPVOID)((DWORD)it.first + ait->second)].hooks;
 						hks.push_back(i);
 						v_AllHooks.push_back(&hks.back());
-						//Log::WriteLine("ÔØÈëÏà¶Ô¹³×Ó£ºÀ´×Ô¿â\"%s\"µÄº¯Êı\"%s\"£¬Î»ÓÚ%s + 0x%X (0x%08X)¡£", i.lib, i.proc, i.RelativeLib, it.first, ((DWORD)it.first + ait->second));
+						//Log::WriteLine("è½½å…¥ç›¸å¯¹é’©å­ï¼šæ¥è‡ªåº“\"%s\"çš„å‡½æ•°\"%s\"ï¼Œä½äº%s + 0x%X (0x%08X)ã€‚", i.lib, i.proc, i.RelativeLib, it.first, ((DWORD)it.first + ait->second));
 					}
 				}
 			}
@@ -1174,7 +1193,7 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 
 			if (!hook->proc_address) {
 				Log::WriteLine(
-					__FUNCTION__ ": ²»ÄÜÔÚ %s ¿âÖĞÕÒµ½º¯Êı"
+					__FUNCTION__ ": ä¸èƒ½åœ¨ %s åº“ä¸­æ‰¾åˆ°å‡½æ•°"
 					" %s", hook->lib, hook->proc);
 			}
 
@@ -1191,7 +1210,7 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 		}
 		else
 		{
-			Log::WriteLine(__FUNCTION__ ": ³É¹¦ÔØÈëËùĞèº¯ÊıµØÖ·.");
+			Log::WriteLine(__FUNCTION__ ": æˆåŠŸè½½å…¥æ‰€éœ€å‡½æ•°åœ°å€.");
 			Log::Flush();
 			bDLLsLoaded = true;
 
@@ -1237,10 +1256,36 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 		EverythingIsOK = true;
 
 		auto [V, S] = AnalyzeAddr(context.Eip);
-		Log::WriteLine(__FUNCTION__ ": ÒâÍâ¶Ïµã£º0x%08X (%s+0x%X)", context.Eip, S.c_str(), V);
-		MessageBoxA(NULL, __FUNCTION__ ": Óöµ½ÁËÒâÍâµÄ¶Ïµã¡£Ïê¼ûSyringe.log¡£", VersionString, MB_ICONEXCLAMATION | MB_OK);
+		Log::WriteLine(__FUNCTION__ ": æ„å¤–æ–­ç‚¹ï¼š0x%08X (%s+0x%X)", context.Eip, S.c_str(), V);
+		if (CheckBreakpoint)
+		{
+			MessageBoxA(NULL, __FUNCTION__ ": é‡åˆ°äº†æ„å¤–çš„æ–­ç‚¹ã€‚è¯¦è§Syringe.logã€‚", VersionString, MB_ICONEXCLAMATION | MB_OK);
 
-		return DBG_EXCEPTION_NOT_HANDLED;
+			//--HOTFIX-- 0.3b3
+			Log::WriteLine(__FUNCTION__ ": è®©æˆ‘åº·åº·ç¨‹åºå‘è‚²æ­£ä¸æ­£å¸¸å•Š~");
+			OutputProcModulePaths();
+			StackDumpInteraction(dbgEvent, false);
+			return DBG_EXCEPTION_NOT_HANDLED;
+		}
+		else
+		{
+			return DBG_CONTINUE;
+		}
+	}
+}
+
+void SyringeDebugger::OutputProcModulePaths()
+{
+	std::vector<HMODULE> Modules;
+	char ModPath[MAX_PATH];
+	Modules.resize(LibBase.size() + 16);
+	DWORD dwHModuleSize = 0;
+	EnumProcessModules(pInfo.hProcess, Modules.data(), (DWORD)(Modules.size() * sizeof(HMODULE)), &dwHModuleSize);
+	auto ModCount = dwHModuleSize / sizeof(HMODULE);
+	for (size_t i = 0; i < ModCount; i++)
+	{
+		GetModuleFileNameExA(pInfo.hProcess, Modules[i], ModPath, MAX_PATH);
+		Log::WriteLine(__FUNCTION__ ": æ¨¡å—(%d/%d): è·¯å¾„%s", i + 1, ModCount + 1, ModPath);
 	}
 }
 
@@ -1249,7 +1294,7 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 	auto const exceptCode = dbgEvent.u.Exception.ExceptionRecord.ExceptionCode;
 
 	if(exceptCode == EXCEPTION_BREAKPOINT)
-		//Õû¸öÔØÈëÁ÷³Ì¶¼ÔÚÕâÁË¡£²»ÓÃ¹ÜReturn£¬¸çÃÇ£¬ÕâÀïĞ´´úÂëµÄË³Ğò¾ÍÊÇÖ´ĞĞµÄË³Ğò£¬Õâ¸öº¯Êı»áÁ¬ĞøÖ´ĞĞºÃ¼¸Ç§´Î£¬´ÓÇ°µ½ºó°ÑÃ¿Ò»¿éÖ´ĞĞÍê±Ï
+		//æ•´ä¸ªè½½å…¥æµç¨‹éƒ½åœ¨è¿™äº†ã€‚ä¸ç”¨ç®¡Returnï¼Œå“¥ä»¬ï¼Œè¿™é‡Œå†™ä»£ç çš„é¡ºåºå°±æ˜¯æ‰§è¡Œçš„é¡ºåºï¼Œè¿™ä¸ªå‡½æ•°ä¼šè¿ç»­æ‰§è¡Œå¥½å‡ åƒæ¬¡ï¼Œä»å‰åˆ°åæŠŠæ¯ä¸€å—æ‰§è¡Œå®Œæ¯•
 	{
 		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_BREAKPOINT");
 		return Handle_BreakPoint(dbgEvent);
@@ -1279,7 +1324,7 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 
 		return DBG_CONTINUE;
 	}
-	else if (exceptCode == EXCEPTION_UNKNOWN_ERROR_1)//·ÇÖÂÃüµÄ
+	else if (exceptCode == EXCEPTION_UNKNOWN_ERROR_1)//éè‡´å‘½çš„
 	{
 		char Buf[260];
 		auto ptr = dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[1];
@@ -1291,25 +1336,30 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 		ReadMem(((LPBYTE)ptr), &pRemotePtr, sizeof(pRemotePtr));
 		auto [Rel, DllStr]=AnalyzeAddr((DWORD)pRemotePtr);
 
-		Log::WriteLine("³ÌĞò´¥·¢ÁËÒ»¸ö¿ÉÄÜÒÑ¾­²¶»ñµÄÒì³£¡££¨Ò»°ã²»»áÓ°ÏìÔËĞĞ£©");
-		Log::WriteLine("%s £º%s", DllStr.c_str(), Buf);
+		Log::WriteLine("ç¨‹åºè§¦å‘äº†ä¸€ä¸ªå¯èƒ½å·²ç»æ•è·çš„å¼‚å¸¸ã€‚ï¼ˆä¸€èˆ¬ä¸ä¼šå½±å“è¿è¡Œï¼‰");
+		Log::WriteLine("%s ï¼š%s", DllStr.c_str(), Buf);
 		if (CheckInsignificantException)
-		{
-			Handle_StackDump(dbgEvent);
-			return Database.InitializeDaemon(false);
-		}
+			return StackDumpInteraction(dbgEvent, false);
 		return DBG_EXCEPTION_NOT_HANDLED;
+	}
+	else if (exceptCode == MS_VC_EXCEPTION)
+	{
+		//TODOï¼š æ ‡è®°çº¿ç¨‹çš„åç§°
+		return DBG_CONTINUE;
 	}
 	else
 	{
-		//Log::WriteLine(__FUNCTION__ ": StackDump");
-		Handle_StackDump(dbgEvent);
-		return Database.InitializeDaemon(true);
+		return StackDumpInteraction(dbgEvent, true);
 	}
 
 	return DBG_CONTINUE;
 }
 
+DWORD SyringeDebugger::StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool FromException)
+{
+	Handle_StackDump(dbgEvent);
+	return Database.InitializeDaemon(FromException);
+}
 
 
 void SyringeDebugger::Run(std::string_view const arguments)
@@ -1317,19 +1367,19 @@ void SyringeDebugger::Run(std::string_view const arguments)
 	constexpr auto AllocDataSize = sizeof(AllocData);
 
 	Log::WriteLine(
-		__FUNCTION__ ": ¿ªÊ¼µ÷ÊÔ¡£ ÃüÁîĞĞ£º \"%s %.*s\"",
+		__FUNCTION__ ": å¼€å§‹è°ƒè¯•ã€‚ å‘½ä»¤è¡Œï¼š \"%s %.*s\"",
 		exe.c_str(), printable(arguments));
 	DebugProcess(arguments);
 
-	Log::WriteLine(__FUNCTION__ ": ·ÖÅäÁË 0x%u ¸ö×Ö½ÚµÄÄÚ´æ¡£", AllocDataSize);
+	Log::WriteLine(__FUNCTION__ ": åˆ†é…äº† 0x%u ä¸ªå­—èŠ‚çš„å†…å­˜ã€‚", AllocDataSize);
 	pAlloc = AllocMem(nullptr, AllocDataSize);
 
 	
 
-	Log::WriteLine(__FUNCTION__ ": ¸Ã¶ÎÄÚ´æµÄµØÖ·£º 0x%08X", pAlloc.get());
+	Log::WriteLine(__FUNCTION__ ": è¯¥æ®µå†…å­˜çš„åœ°å€ï¼š 0x%08X", pAlloc.get());
 
 	// write DLL loader code
-	Log::WriteLine(__FUNCTION__ ": ÕıÔÚĞ´ÈëDLLµÄÔØÈë¡¢µ÷ÓÃ´úÂë¡­¡­");
+	Log::WriteLine(__FUNCTION__ ": æ­£åœ¨å†™å…¥DLLçš„è½½å…¥ã€è°ƒç”¨ä»£ç â€¦â€¦");
 
 	static BYTE const cLoadLibrary[] = {
 		//0x50, // push eax
@@ -1364,7 +1414,7 @@ void SyringeDebugger::Run(std::string_view const arguments)
 	ApplyPatch(data.data() + 0x2E, Database.GetDblInteractData().FinalAddr);
 	PatchMem(pAlloc, data.data(), data.size());
 
-	Log::WriteLine(__FUNCTION__ ": ÔØÈë´úÂëÎ»ÓÚ 0x%08X", &GetData()->LoadLibraryFunc);
+	Log::WriteLine(__FUNCTION__ ": è½½å…¥ä»£ç ä½äº 0x%08X", &GetData()->LoadLibraryFunc);
 
 	// breakpoints for DLL loading and proc address retrieving
 	bDLLsLoaded = false;
@@ -1372,14 +1422,14 @@ void SyringeDebugger::Run(std::string_view const arguments)
 	loop_LoadLibrary = v_AllHooks.end();
 
 	// set breakpoint
-	Log::WriteLine(__FUNCTION__ ": ÉèÖÃÈë¿Ú´¦µÄ¶Ïµã¡£");
+	Log::WriteLine(__FUNCTION__ ": è®¾ç½®å…¥å£å¤„çš„æ–­ç‚¹ã€‚");
 	SetBP(pcEntryPoint);
 
 	DEBUG_EVENT dbgEvent;
 	ResumeThread(pInfo.hThread);
 
 	bAVLogged = false;
-	Log::WriteLine(__FUNCTION__ ": ¿ªÊ¼µ÷ÊÔÑ­»·¡£");
+	Log::WriteLine(__FUNCTION__ ": å¼€å§‹è°ƒè¯•å¾ªç¯ã€‚");
 	auto exit_code = static_cast<DWORD>(-1);
 	Log::Flush();
 
@@ -1423,15 +1473,39 @@ void SyringeDebugger::Run(std::string_view const arguments)
 			break;
 
 		case OUTPUT_DEBUG_STRING_EVENT:
-			if (dbgEvent.u.DebugString.fUnicode) {
+			int byteSize = dbgEvent.u.DebugString.nDebugStringLength;
+
+			/*
+			{
+				std::vector<char> Buf;
+				Buf.resize(byteSize);
+				ReadMem(dbgEvent.u.DebugString.lpDebugStringData, Buf.data(), byteSize);
+				std::string Out;
+				char Buf1[100];
+				for (auto& c : Buf) {
+					itoa((int)c, Buf1, 16);
+					Out += Buf1;
+					Out += ' ';
+				}
 				Log::WriteLine(
-					__FUNCTION__ ": Êä³öµ÷ÊÔ×Ö·û´®£º%s",
-					UnicodetoANSI((const wchar_t*)dbgEvent.u.DebugString.lpDebugStringData).c_str());
+					__FUNCTION__ ": è¾“å‡ºè°ƒè¯•å­—ç¬¦ä¸²(HEX)ï¼š%s",
+					Out.c_str());
+			}
+			*/
+
+			if (dbgEvent.u.DebugString.fUnicode) {
+				std::wstring outputString((byteSize / 2) + 1, L'\0');
+				ReadMem(dbgEvent.u.DebugString.lpDebugStringData, &outputString[0], byteSize);
+				Log::WriteLine(
+					__FUNCTION__ ": æ”¶åˆ°è°ƒè¯•ä¿¡æ¯ï¼š%s",
+					UnicodetoANSI(outputString).c_str());
 			}
 			else {
+				std::string outputString(byteSize + 1, '\0');
+				ReadMem(dbgEvent.u.DebugString.lpDebugStringData, &outputString[0], byteSize);
 				Log::WriteLine(
-					__FUNCTION__ ": Êä³öµ÷ÊÔ×Ö·û´®£º%s",
-					dbgEvent.u.DebugString.lpDebugStringData);
+					__FUNCTION__ ": æ”¶åˆ°è°ƒè¯•ä¿¡æ¯ï¼š%s",
+					outputString.c_str());
 			}
 			break;
 		}
@@ -1449,7 +1523,7 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		{
 			DebugSetProcessKillOnExit(FALSE);
 			CloseHandle(pInfo.hProcess);
-			Log::WriteLine(__FUNCTION__ ": Syringe½«·ÖÀë²¢½áÊøÔËĞĞ£¬ÒÑ×¢ÈëµÄ´úÂë½«±£Áô¡£");
+			Log::WriteLine(__FUNCTION__ ": Syringeå°†åˆ†ç¦»å¹¶ç»“æŸè¿è¡Œï¼Œå·²æ³¨å…¥çš„ä»£ç å°†ä¿ç•™ã€‚");
 			Log::WriteLine();
 			return;
 		}
@@ -1459,7 +1533,7 @@ void SyringeDebugger::Run(std::string_view const arguments)
 	CloseHandle(pInfo.hProcess);
 
 	Log::WriteLine(
-		__FUNCTION__ ": Õı³£ÍË³ö£¬·µ»ØÂë£º%X (%u).", exit_code, exit_code);
+		__FUNCTION__ ": æ­£å¸¸é€€å‡ºï¼Œè¿”å›ç ï¼š%X (%u).", exit_code, exit_code);
 	Log::WriteLine();	
 }
 
@@ -1479,7 +1553,7 @@ void SyringeDebugger::RetrieveInfo()
 	Database.Init(this);
 	
 	Log::WriteLine(
-		__FUNCTION__ ": ÕıÔÚ´Ó¿ÉÖ´ĞĞÎÄ¼ş \"%s\" ÖĞ¶ÁÈëĞÅÏ¢¡­¡­", exe.c_str());
+		__FUNCTION__ ": æ­£åœ¨ä»å¯æ‰§è¡Œæ–‡ä»¶ \"%s\" ä¸­è¯»å…¥ä¿¡æ¯â€¦â€¦", exe.c_str());
 
 	try {
 		PortableExecutable pe{ exe };
@@ -1498,8 +1572,12 @@ void SyringeDebugger::RetrieveInfo()
 		pImGetProcAddress = nullptr;
 
 		for(auto const& import : pe.GetImports()) {
+			Log::WriteLine(
+				__FUNCTION__ ": å¯æ‰§è¡Œæ–‡ä»¶ä¾èµ–äºåº“ï¼š%s", import.Name.c_str());
 			if(_strcmpi(import.Name.c_str(), "KERNEL32.DLL") == 0) {
 				for(auto const& thunk : import.vecThunkData) {
+					Log::WriteLine(
+						__FUNCTION__ ": \tå¯¼å…¥å‡½æ•°ï¼š%s ADDR 0x%08X", thunk.Name.c_str(), dwImageBase + thunk.Address);
 					if(_strcmpi(thunk.Name.c_str(), "GETPROCADDRESS") == 0) {
 						pImGetProcAddress = reinterpret_cast<void*>(dwImageBase + thunk.Address);
 					} else if(_strcmpi(thunk.Name.c_str(), "LOADLIBRARYA") == 0) {
@@ -1509,14 +1587,14 @@ void SyringeDebugger::RetrieveInfo()
 			}
 		}
 	} catch(...) {
-		Log::WriteLine(__FUNCTION__ ": ÎŞ·¨´ò¿ª¿ÉÖ´ĞĞÎÄ¼ş \"%s\"", exe.c_str());
+		Log::WriteLine(__FUNCTION__ ": æ— æ³•æ‰“å¼€å¯æ‰§è¡Œæ–‡ä»¶ \"%s\"", exe.c_str());
 
 		throw;
 	}
 
 	if(!pImGetProcAddress || !pImLoadLibrary) {
 		Log::WriteLine(
-			__FUNCTION__ ": ´íÎó£ºÎŞ·¨ÔØÈë LoadLibraryA ºÍ GetProcAddress £¡");
+			__FUNCTION__ ": é”™è¯¯ï¼šæ— æ³•è½½å…¥ LoadLibraryA å’Œ GetProcAddress ï¼");
 
 		throw_lasterror_or(ERROR_PROC_NOT_FOUND, exe);
 	}
@@ -1535,17 +1613,17 @@ void SyringeDebugger::RetrieveInfo()
 		dwExeCRC = crc.value();
 	}
 
-	Log::WriteLine(__FUNCTION__ ": ³É¹¦ÔØÈë¿ÉÖ´ĞĞÎÄ¼şµÄĞÅÏ¢¡£");
-	Log::WriteLine("\tÎÄ¼şÃû£º%s", exe.c_str());
-	Log::WriteLine("\tLoadLibraryÎ»ÓÚ£º0x%08X", pImLoadLibrary);
-	Log::WriteLine("\tGetProcAddressÎ»ÓÚ£º0x%08X", pImGetProcAddress);
-	Log::WriteLine("\tEntryPointÎ»ÓÚ£º0x%08X", pcEntryPoint);
-	Log::WriteLine("\tÎÄ¼ş´óĞ¡£º0x%08X", dwExeSize);
-	Log::WriteLine("\tÎÄ¼şCRCÖµ£º0x%08X", dwExeCRC);
-	Log::WriteLine("\tÔØÈëÊ±¼ä´Á£º0x%08X", dwTimeStamp);
+	Log::WriteLine(__FUNCTION__ ": æˆåŠŸè½½å…¥å¯æ‰§è¡Œæ–‡ä»¶çš„ä¿¡æ¯ã€‚");
+	Log::WriteLine("\tæ–‡ä»¶åï¼š%s", exe.c_str());
+	Log::WriteLine("\tLoadLibraryä½äºï¼š0x%08X", pImLoadLibrary);
+	Log::WriteLine("\tGetProcAddressä½äºï¼š0x%08X", pImGetProcAddress);
+	Log::WriteLine("\tEntryPointä½äºï¼š0x%08X", pcEntryPoint);
+	Log::WriteLine("\tæ–‡ä»¶å¤§å°ï¼š0x%08X", dwExeSize);
+	Log::WriteLine("\tæ–‡ä»¶CRCå€¼ï¼š0x%08X", dwExeCRC);
+	Log::WriteLine("\tè½½å…¥æ—¶é—´æˆ³ï¼š0x%08X", dwTimeStamp);
 	Log::WriteLine();
 
-	Log::WriteLine(__FUNCTION__ ": ´ò¿ª %s ÒÔÈ·¶¨ÔØÈëËùĞèĞÅÏ¢¡£", exe.c_str());
+	Log::WriteLine(__FUNCTION__ ": æ‰“å¼€ %s ä»¥ç¡®å®šè½½å…¥æ‰€éœ€ä¿¡æ¯ã€‚", exe.c_str());
 }
 
 const std::string& ExecutableDirectoryPath()
@@ -1637,7 +1715,7 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 	if (cfn == "SYRINGEEX.DLL")
 	{
 		Log::WriteLine(
-			__FUNCTION__ ": Ìø¹ı DLL £º\"%.*s\"", printable(fn));
+			__FUNCTION__ ": è·³è¿‡ DLL ï¼š\"%.*s\"", printable(fn));
 		SyringeExPath = AbsPath;
 		return;
 	}
@@ -1667,7 +1745,7 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 		if (canLoad)
 		{
 			Log::WriteLine(
-				__FUNCTION__ ": ÒÑÊ¶±ğµ½ DLL£º\"%.*s\"", printable(fn));
+				__FUNCTION__ ": å·²è¯†åˆ«åˆ° DLLï¼š\"%.*s\"", printable(fn));
 			DLLs.push_back(AbsPath);
 			DLLShort.emplace_back(fn);
 
@@ -1738,13 +1816,13 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 		}
 		else if (!buffer.hooks.empty()) {
 			Log::WriteLine(
-				__FUNCTION__ ": DLL \"%.*s\" ÖĞÎŞ·¨¼ì²âµ½¹³×Ó£¬Í£Ö¹ÔØÈë",
+				__FUNCTION__ ": DLL \"%.*s\" ä¸­æ— æ³•æ£€æµ‹åˆ°é’©å­ï¼Œåœæ­¢è½½å…¥",
 				printable(fn));
 		}
 	}
 	catch (...) {
 		Log::WriteLine(
-			__FUNCTION__ ": DLL \"%.*s\" ÔØÈëÊ§°Ü¡£", printable(fn));
+			__FUNCTION__ ": DLL \"%.*s\" è½½å…¥å¤±è´¥ã€‚", printable(fn));
 	}
 }
 
@@ -1755,9 +1833,9 @@ void SyringeDebugger::FindDLLs()
 	std::wstring EDPath = ExecutableDirectoryPathW();
 
 	
-	Log::WriteLine(__FUNCTION__ ": ÔÚÄ¿Â¼ \"%s\" ÖĞËÑÑ°DLL¡£ ", ExecutableDirectoryPath().c_str());
+	Log::WriteLine(__FUNCTION__ ": åœ¨ç›®å½• \"%s\" ä¸­æœå¯»DLLã€‚ ", ExecutableDirectoryPath().c_str());
 	for(auto file = FindFile((EDPath + L"\\*.dll").c_str()); file; ++file) {
-		Log::WriteLine(__FUNCTION__ ": ÕıÔÚ¼ì²â DLL \"%s\".", UnicodetoANSI(file->cFileName).c_str());
+		Log::WriteLine(__FUNCTION__ ": æ­£åœ¨æ£€æµ‹ DLL \"%s\".", UnicodetoANSI(file->cFileName).c_str());
 		FindDLLsLoop(file, UnicodetoANSI(EDPath), false);
 	}
 
@@ -1766,32 +1844,32 @@ void SyringeDebugger::FindDLLs()
 			UseDefaultLoadingPolicy = false;
 	if (DefaultExtPack == "NONE")
 	{
-		Log::WriteLine(__FUNCTION__ ": Ê¹ÓÃ¿Õ°×À©Õ¹ÅäÖÃ¡£");
+		Log::WriteLine(__FUNCTION__ ": ä½¿ç”¨ç©ºç™½æ‰©å±•é…ç½®ã€‚");
 	}
 	else if (UseDefaultLoadingPolicy)
 	{
-		Log::WriteLine(__FUNCTION__ ": Ê¹ÓÃÄ¬ÈÏÀ©Õ¹ÅäÖÃ£¨\"\\Patches\\*.dll\"£©¡£");
+		Log::WriteLine(__FUNCTION__ ": ä½¿ç”¨é»˜è®¤æ‰©å±•é…ç½®ï¼ˆ\"\\Patches\\*.dll\"ï¼‰ã€‚");
 		std::wstring EDPathAlt = EDPath + L"\\Patches";
-		Log::WriteLine(__FUNCTION__ ": ÔÚÄ¿Â¼ \"%s\\Patches\"ÖĞËÑÑ°DLL¡£", ExecutableDirectoryPath().c_str());
+		Log::WriteLine(__FUNCTION__ ": åœ¨ç›®å½• \"%s\\Patches\"ä¸­æœå¯»DLLã€‚", ExecutableDirectoryPath().c_str());
 		for (auto file = FindFile((EDPath + L"\\Patches\\*.dll").c_str()); file; ++file) {
-			Log::WriteLine(__FUNCTION__ ": ÕıÔÚ¼ì²â DLL \"%s\".", UnicodetoANSI(file->cFileName).c_str());
+			Log::WriteLine(__FUNCTION__ ": æ­£åœ¨æ£€æµ‹ DLL \"%s\".", UnicodetoANSI(file->cFileName).c_str());
 			FindDLLsLoop(file, UnicodetoANSI(EDPathAlt), false);
 		}
 	}
 	else
 	{
 		auto& Pack = ExtPacks[DefaultExtPack];
-		Log::WriteLine(__FUNCTION__ ": Ê¹ÓÃÀ©Õ¹ÅäÖÃ \"%s\"¡£", UTF8toANSI(DefaultExtPack).c_str());
+		Log::WriteLine(__FUNCTION__ ": ä½¿ç”¨æ‰©å±•é…ç½® \"%s\"ã€‚", UTF8toANSI(DefaultExtPack).c_str());
 		for (auto& Dir : Pack.Directories)
 		{
 			auto wp = UTF8toUnicode(Dir.Path);
 			std::wstring EDPathAlt = EDPath + wp;
-			Log::WriteLine(__FUNCTION__ ": ÔÚÄ¿Â¼ \"%s%s\"ÖĞËÑÑ°DLL¡£", ExecutableDirectoryPath().c_str(), Dir.Path.c_str());
+			Log::WriteLine(__FUNCTION__ ": åœ¨ç›®å½• \"%s%s\"ä¸­æœå¯»DLLã€‚", ExecutableDirectoryPath().c_str(), Dir.Path.c_str());
 			for (auto file = FindFile((EDPath + wp + L"\\*.*").c_str()); file; ++file) {
 				auto U8 = UnicodetoUTF8(file->cFileName);
 				if (Dir.MatchName(U8.c_str()))
 				{
-					Log::WriteLine(__FUNCTION__ ": ÕıÔÚ¼ì²â DLL \"%s\".", U8.c_str());
+					Log::WriteLine(__FUNCTION__ ": æ­£åœ¨æ£€æµ‹ DLL \"%s\".", U8.c_str());
 					FindDLLsLoop(file, UnicodetoANSI(EDPathAlt), Dir.LoadAllMatchedFiles);
 				}
 			}
@@ -1800,8 +1878,8 @@ void SyringeDebugger::FindDLLs()
 
 	if (SyringeExPath.empty())
 	{
-		Log::WriteLine(__FUNCTION__ ": Ã»ÓĞÕÒµ½ SyringeEx.dll£¬ÇëÈ·±£ËüÎ»ÓÚ¿É±»ÕÒµ½µÄÎ»ÖÃ¡£");
-		MessageBoxW(NULL, L"Ã»ÓĞÕÒµ½ SyringeEx.dll£¬ÇëÈ·±£ËüÎ»ÓÚ¿É±»ÕÒµ½µÄÎ»ÖÃ¡£", VersionLString, MB_OK | MB_ICONERROR);
+		Log::WriteLine(__FUNCTION__ ": æ²¡æœ‰æ‰¾åˆ° SyringeEx.dllï¼Œè¯·ç¡®ä¿å®ƒä½äºå¯è¢«æ‰¾åˆ°çš„ä½ç½®ã€‚");
+		MessageBoxW(NULL, L"æ²¡æœ‰æ‰¾åˆ° SyringeEx.dllï¼Œè¯·ç¡®ä¿å®ƒä½äºå¯è¢«æ‰¾åˆ°çš„ä½ç½®ã€‚", VersionLString, MB_OK | MB_ICONERROR);
 		throw_lasterror(ERROR_FILE_NOT_FOUND, "SyringeEx.dll", true);
 	}
 	
@@ -1815,19 +1893,19 @@ void SyringeDebugger::FindDLLs()
 		}
 		else
 		{
-			Log::WriteLine(__FUNCTION__ ": ÖØ¸´µÄDLLÃû³Æ£º%s", DLLShort[i].c_str());
-			Log::WriteLine(__FUNCTION__ ": ³öÏÖÓÚ %s ºÍ %s", LibNames[DLLShort[i]].c_str(), DLLs[i].c_str());
+			Log::WriteLine(__FUNCTION__ ": é‡å¤çš„DLLåç§°ï¼š%s", DLLShort[i].c_str());
+			Log::WriteLine(__FUNCTION__ ": å‡ºç°äº %s å’Œ %s", LibNames[DLLShort[i]].c_str(), DLLs[i].c_str());
 			
-			auto Answer = MessageBoxW(NULL, (L"³öÏÖÁËÖØ¸´µÄDLL£º" + ANSItoUnicode(DLLShort[i]) + L"\nÏê¼û Syringe.log¡£\nÊÇ·ñ¼ÌĞøÔËĞĞ£¿").c_str(),
+			auto Answer = MessageBoxW(NULL, (L"å‡ºç°äº†é‡å¤çš„DLLï¼š" + ANSItoUnicode(DLLShort[i]) + L"\nè¯¦è§ Syringe.logã€‚\næ˜¯å¦ç»§ç»­è¿è¡Œï¼Ÿ").c_str(),
 				VersionLString, MB_YESNO | MB_ICONERROR);
 
 			if(Answer == IDYES)
 			{
-				Log::WriteLine(__FUNCTION__ ": ÓÃ»§Ñ¡Ôñ¼ÌĞøÔËĞĞ¡£");
+				Log::WriteLine(__FUNCTION__ ": ç”¨æˆ·é€‰æ‹©ç»§ç»­è¿è¡Œã€‚");
 			}
 			else
 			{
-				Log::WriteLine(__FUNCTION__ ": ÓÃ»§Ñ¡ÔñÍ£Ö¹ÔËĞĞ¡£");
+				Log::WriteLine(__FUNCTION__ ": ç”¨æˆ·é€‰æ‹©åœæ­¢è¿è¡Œã€‚");
 				throw_lasterror(ERROR_FILE_EXISTS, DLLShort[i], true);
 			}
 		}
@@ -1885,17 +1963,17 @@ void SyringeDebugger::FindDLLs()
 
 	if (ShowHookAnalysis)
 	{
-		Log::WriteLine(__FUNCTION__ ": ÕıÔÚÊä³ö¹³×Ó·ÖÎö±¨¸æ¡­¡­", v_AllHooks.size());
-		if (Analyzer.Report())Log::WriteLine(__FUNCTION__ ": ¹³×Ó·ÖÎö±¨¸æÒÑÍê³É£¬Ïê¼û HookAnalysis.log ¡£", v_AllHooks.size());
-		else Log::WriteLine(__FUNCTION__ ": ¹³×Ó·ÖÎö±¨¸æÉú³ÉÊ§°Ü¡£", v_AllHooks.size());
+		Log::WriteLine(__FUNCTION__ ": æ­£åœ¨è¾“å‡ºé’©å­åˆ†ææŠ¥å‘Šâ€¦â€¦", v_AllHooks.size());
+		if (Analyzer.Report())Log::WriteLine(__FUNCTION__ ": é’©å­åˆ†ææŠ¥å‘Šå·²å®Œæˆï¼Œè¯¦è§ HookAnalysis.log ã€‚", v_AllHooks.size());
+		else Log::WriteLine(__FUNCTION__ ": é’©å­åˆ†ææŠ¥å‘Šç”Ÿæˆå¤±è´¥ã€‚", v_AllHooks.size());
 	}
 
 
-	Log::WriteLine(__FUNCTION__ ": ÔØÈëÍê³É£¬¹²Ìí¼Ó %d ¸ö¹³×Ó¡£", v_AllHooks.size());
+	Log::WriteLine(__FUNCTION__ ": è½½å…¥å®Œæˆï¼Œå…±æ·»åŠ  %d ä¸ªé’©å­ã€‚", v_AllHooks.size());
 	Log::WriteLine();
 }
 
-//ÁÙÊ±´ÓÀÏ´úÂë½èÀ´µÄXD£¬Ã»ÓÅ»¯
+//ä¸´æ—¶ä»è€ä»£ç å€Ÿæ¥çš„XDï¼Œæ²¡ä¼˜åŒ–
 std::string CutSpace(const std::string& ss)//REPLACE ORIG
 {
 	auto fp = ss.find_first_not_of(" \011\r\n\t"), bp = ss.find_last_not_of(" \011\r\n\t");
@@ -2030,7 +2108,7 @@ bool SyringeDebugger::ParseHooksSection(
 				}
 			}
 			else {
-				Log::WriteLine(__FUNCTION__ ": ´Ó \"%s\" ÖĞ²åÈë¹³×ÓÊ±·¢Éú¹ÊÕÏ", DLL.GetFilename());
+				Log::WriteLine(__FUNCTION__ ": ä» \"%s\" ä¸­æ’å…¥é’©å­æ—¶å‘ç”Ÿæ•…éšœ", DLL.GetFilename());
 				return false;
 			}
 		}
@@ -2039,7 +2117,7 @@ bool SyringeDebugger::ParseHooksSection(
 	auto const hookalt = DLL.FindSection(".hphks00");
 	if (hookalt)
 	{
-		Log::WriteLine(__FUNCTION__ ": ÕıÔÚÔØÈëÀ©Õ¹¸ñÊ½µÄ¹³×Ó¡­¡­");
+		Log::WriteLine(__FUNCTION__ ": æ­£åœ¨è½½å…¥æ‰©å±•æ ¼å¼çš„é’©å­â€¦â€¦");
 		auto const beginalt = hookalt->PointerToRawData;
 		auto const endalt = beginalt + hookalt->SizeOfRawData;
 		constexpr auto const SizeAlt = sizeof(hookdecl);
@@ -2065,7 +2143,7 @@ bool SyringeDebugger::ParseHooksSection(
 				}
 			}
 			else {
-				Log::WriteLine(__FUNCTION__ ": ´Ó \"%s\" ÖĞ²åÈë¹³×ÓÊ±·¢Éú¹ÊÕÏ", DLL.GetFilename());
+				Log::WriteLine(__FUNCTION__ ": ä» \"%s\" ä¸­æ’å…¥é’©å­æ—¶å‘ç”Ÿæ•…éšœ", DLL.GetFilename());
 				return false;
 			}
 		}
@@ -2098,7 +2176,7 @@ std::optional<bool> SyringeDebugger::Handshake(
 		if(auto const func = reinterpret_cast<SYRINGEHANDSHAKEFUNC>(
 			GetProcAddress(hLib, "SyringeHandshake")))
 		{
-			Log::WriteLine(__FUNCTION__ ": ÔÚSyringe.exeµÄ½ø³Ì¿Õ¼äÖĞÓëDLLÍ¨Ñ¶£º \"%s\" ¡£", lib);
+			Log::WriteLine(__FUNCTION__ ": åœ¨Syringe.exeçš„è¿›ç¨‹ç©ºé—´ä¸­ä¸DLLé€šè®¯ï¼š \"%s\" ã€‚", lib);
 			constexpr auto Size = 0x100u;
 			std::vector<char> buffer(Size + 1); // one more than we tell the dll
 
@@ -2115,11 +2193,11 @@ std::optional<bool> SyringeDebugger::Handshake(
 			if(auto const res = func(shInfo.get()); SUCCEEDED(res)) {
 				buffer.back() = 0;
 				Log::WriteLine(
-					__FUNCTION__ ": ·µ»ØĞÅÏ¢£º \"%s\" (%X)", buffer.data(), res);
+					__FUNCTION__ ": è¿”å›ä¿¡æ¯ï¼š \"%s\" (%X)", buffer.data(), res);
 				ret = (res == S_OK);
 			} else {
 				// don't use any properties of shInfo.
-				Log::WriteLine(__FUNCTION__ ": µ÷È¡Ê§°Ü¡£ (%X)", res);
+				Log::WriteLine(__FUNCTION__ ": è°ƒå–å¤±è´¥ã€‚ (%X)", res);
 				ret = false;
 			}
 		} else {

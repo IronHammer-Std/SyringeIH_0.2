@@ -91,6 +91,8 @@ public:
 	void Handle_StackDump(DEBUG_EVENT const& dbgEvent);
 	void Handle_ApplyHook();
 	void PreloadData();
+	DWORD StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool FromException);
+	void OutputProcModulePaths();
 
 	// breakpoints
 	bool SetBP(void* address);
