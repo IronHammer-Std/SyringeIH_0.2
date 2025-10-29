@@ -82,10 +82,24 @@ bool HookAnalyzer::HasHookConflict()
 		{
 			Log::WriteLine("检测到钩子冲突：");
 			for (auto& h : *SortedHooks[i])
-				Log::WriteLine("钩子\"%s\"，相对于\"%s\"，位于%08X，长度%d，优先级 %d，次优先级 \"%s\"", h.Proc.c_str(), h.RelLib.c_str(), h.Addr, h.Len, h.Priority, h.SubPriority.c_str());
+				Log::WriteLine("钩子\"%s\"，来自\"%s\"，相对于\"%s\"，位于%08X，长度%d，优先级 %d，次优先级 \"%s\"", 
+					h.Proc.c_str(), 
+					h.Lib.c_str(),
+					h.RelLib.c_str(), 
+					h.Addr, 
+					h.Len, 
+					h.Priority, 
+					h.SubPriority.c_str());
 			for (auto& h : *SortedHooks[i + 1])
-				Log::WriteLine("钩子\"%s\"，相对于\"%s\"，位于%08X，长度%d，优先级 %d，次优先级 \"%s\"", h.Proc.c_str(), h.RelLib.c_str(), h.Addr, h.Len, h.Priority, h.SubPriority.c_str());
-			if (!Conflict)
+				Log::WriteLine("钩子\"%s\"，来自\"%s\"，相对于\"%s\"，位于%08X，长度%d，优先级 %d，次优先级 \"%s\"", 
+					h.Proc.c_str(), 
+					h.Lib.c_str(), 
+					h.RelLib.c_str(), 
+					h.Addr, 
+					h.Len, 
+					h.Priority, 
+					h.SubPriority.c_str());
+			if (!Conflict && ShowHookConflictPopup)
 			{
 				wchar_t ErrorStr[1000];
 				swprintf_s(ErrorStr, 1000, L"检测到位于 0x%08X 和 0x%08X 的钩子冲突，详见 Syringe.log 。", Addr1, Addr2);

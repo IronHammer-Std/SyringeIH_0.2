@@ -24,6 +24,7 @@ bool CheckInsignificantException = false;
 bool CheckBreakpoint = false;
 bool AnalyzeCPPException = true;
 bool OverwriteStartParams = false;
+bool ShowHookConflictPopup = false;
 
 std::unordered_map<std::string, ExtensionPack> ExtPacks;
 std::string DefaultExtPack;
@@ -244,6 +245,12 @@ void ReadSetting()
     {
         OverwriteStartParams = SObj.GetBool();
         Log::WriteLine("OverwriteStartParams = %s", CStrBoolImpl(OverwriteStartParams, StrBoolType::Str_true_false));
+    }
+    SObj = Obj.GetObjectItem("ShowHookConflictPopup");
+    if (SObj.Available() && SObj.IsTypeBool())
+    {
+        ShowHookConflictPopup = SObj.GetBool();
+        Log::WriteLine("ShowHookConflictPopup = %s", CStrBoolImpl(ShowHookConflictPopup, StrBoolType::Str_true_false));
     }
     SObj = Obj.GetObjectItem("ExtensionPacks");
     if (SObj.Available() && SObj.IsTypeObject())

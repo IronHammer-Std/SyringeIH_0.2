@@ -40,6 +40,7 @@ extern bool CheckInsignificantException;
 extern bool CheckBreakpoint;
 extern bool AnalyzeCPPException;
 extern bool OverwriteStartParams;
+extern bool ShowHookConflictPopup;
 extern std::set<HookIdx> GlobalDisableHooks;
 extern std::set<HookIdx> GlobalEnableHooks;
 

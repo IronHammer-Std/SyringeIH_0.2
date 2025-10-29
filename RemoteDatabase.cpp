@@ -237,7 +237,7 @@ DWORD RemoteDatabase::GetDaemonDataAddr() const
 
 void RemoteDatabase::StartDaemonMonitor(bool FromException)
 {
-
+	((void)FromException);
 
 	auto DaemonID = GetDaemonThreadID();
 	for (auto& [ID, Handle] : Dbg->Threads)
