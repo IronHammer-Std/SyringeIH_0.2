@@ -1967,6 +1967,7 @@ void SyringeDebugger::FindDLLs()
 		if (Analyzer.Report())Log::WriteLine(__FUNCTION__ ": 钩子分析报告已完成，详见 HookAnalysis.log 。", v_AllHooks.size());
 		else Log::WriteLine(__FUNCTION__ ": 钩子分析报告生成失败。", v_AllHooks.size());
 	}
+	Analyzer.HasHookConflict();
 
 
 	Log::WriteLine(__FUNCTION__ ": 载入完成，共添加 %d 个钩子。", v_AllHooks.size());

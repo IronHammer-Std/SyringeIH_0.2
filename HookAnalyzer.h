@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include<vector>
 #include<unordered_map>
@@ -32,6 +32,7 @@ public:
 	void AddEx(HookAnalyzeData&&);
 	bool Report();
 	bool GenerateINJ();
+	bool HasHookConflict();
 };
 
 static constexpr size_t MaxNameLength = 0x100u;

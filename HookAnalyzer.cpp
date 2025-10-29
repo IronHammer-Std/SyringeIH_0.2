@@ -1,4 +1,4 @@
-#include "HookAnalyzer.h"
+ï»¿#include "HookAnalyzer.h"
 #include "Handle.h"
 #include "Setting.h"
 #include <filesystem>
@@ -22,17 +22,17 @@ bool HookAnalyzer::Report()
 {
 	FileHandle File = FileHandle(fopen("HookAnalysis.log", "w"));
 	if (!File)return false;
-	fprintf(File, "%s ½«·ÖÎö»ñÈ¡µ½µÄ¹³×Ó¡£\n", VersionString);
+	fprintf(File, "%s å°†åˆ†æè·å–åˆ°çš„é’©å­ã€‚\n", VersionString);
 	if (ShowHookAnalysis_ByAddr)
 	{
 		fputs("========================\n", File);
-		fputs("°´ÕÕ¹³×ÓÎ»ÖÃ·ÖÎö£º£¨Ã¿¸öµØÖ·´¦°´ÕÕ¹³×ÓÖ´ĞĞĞò£©\n", File);
+		fputs("æŒ‰ç…§é’©å­ä½ç½®åˆ†æï¼šï¼ˆæ¯ä¸ªåœ°å€å¤„æŒ‰ç…§é’©å­æ‰§è¡Œåºï¼‰\n", File);
 		for (auto& p : ByAddress)
 		{
-			fprintf(File, "ÔÚ %08X £º\n", p.first);
+			fprintf(File, "åœ¨ %08X ï¼š\n", p.first);
 			for (auto v : p.second)
 			{
-				fprintf(File, "¹³×Ó\"%s£¬Ïà¶ÔÓÚ\"%s\"£¬À´×Ô\"%s\"£¬³¤¶È%d£¬ÓÅÏÈ¼¶ %d£¬´ÎÓÅÏÈ¼¶ \"%s\"\n", v.Proc.c_str(), v.RelLib.c_str(), v.Lib.c_str(), v.Len, v.Priority, v.SubPriority.c_str());
+				fprintf(File, "é’©å­\"%sï¼Œç›¸å¯¹äº\"%s\"ï¼Œæ¥è‡ª\"%s\"ï¼Œé•¿åº¦%dï¼Œä¼˜å…ˆçº§ %dï¼Œæ¬¡ä¼˜å…ˆçº§ \"%s\"\n", v.Proc.c_str(), v.RelLib.c_str(), v.Lib.c_str(), v.Len, v.Priority, v.SubPriority.c_str());
 			}
 		}
 	}
@@ -40,23 +40,62 @@ bool HookAnalyzer::Report()
 	if (ShowHookAnalysis_ByLib)
 	{
 		fputs("========================\n", File);
-		fputs("°´ÕÕ¹³×ÓÀ´Ô´·ÖÎö£º\n", File);
+		fputs("æŒ‰ç…§é’©å­æ¥æºåˆ†æï¼š\n", File);
 		for (auto& p : ByLibName)
 		{
-			fprintf(File, "ÕıÔÚ·ÖÎö DLL £º\"%s\" ¡­¡­\n", p.first.c_str());
+			fprintf(File, "æ­£åœ¨åˆ†æ DLL ï¼š\"%s\" â€¦â€¦\n", p.first.c_str());
 			for (auto v : p.second)
 			{
-				fprintf(File, "¹³×Ó\"%s\"£¬Ïà¶ÔÓÚ\"%s\"£¬Î»ÓÚ%08X£¬³¤¶È%d£¬ÓÅÏÈ¼¶ %d£¬´ÎÓÅÏÈ¼¶ \"%s\"\n", v.Proc.c_str(), v.RelLib.c_str(), v.Addr, v.Len, v.Priority, v.SubPriority.c_str());
+				fprintf(File, "é’©å­\"%s\"ï¼Œç›¸å¯¹äº\"%s\"ï¼Œä½äº%08Xï¼Œé•¿åº¦%dï¼Œä¼˜å…ˆçº§ %dï¼Œæ¬¡ä¼˜å…ˆçº§ \"%s\"\n", v.Proc.c_str(), v.RelLib.c_str(), v.Addr, v.Len, v.Priority, v.SubPriority.c_str());
 			}
 		}
 	}
 	
 	fputs("========================\n", File);
-	fprintf(File, "%s ·ÖÎöÍê±Ï¡£\n", VersionString);
+	fprintf(File, "%s åˆ†æå®Œæ¯•ã€‚\n", VersionString);
 	return true;
 }
 
 const std::string& ExecutableDirectoryPath();
+
+bool HookAnalyzer::HasHookConflict()
+{
+	//check if there are conflicting hooks
+	bool Conflict = false;
+	std::vector<std::vector<HookAnalyzeData>*> SortedHooks;
+	for (auto& p : ByAddressEx)
+		SortedHooks.push_back(&p.second);
+	std::sort(SortedHooks.begin(), SortedHooks.end(), [](const auto& lhs, const auto& rhs) -> bool
+		{
+			return lhs->front().Addr < rhs->front().Addr;
+		});
+	for (size_t i = 0; i < SortedHooks.size() - 1; i++)
+	{
+		auto Addr1 = SortedHooks[i]->front().Addr;
+		auto Addr2 = SortedHooks[i + 1]->front().Addr;
+		auto Len1 = std::max_element(SortedHooks[i]->begin(), SortedHooks[i]->end(), [](const auto& lhs, const auto& rhs) -> bool
+			{
+				return lhs.Len < rhs.Len;
+			})->Len;
+		Len1 = std::max(Len1, 5);//a JMP is 5 bytes
+		if (Addr1 + Len1 > Addr2)
+		{
+			Log::WriteLine("æ£€æµ‹åˆ°é’©å­å†²çªï¼š");
+			for (auto& h : *SortedHooks[i])
+				Log::WriteLine("é’©å­\"%s\"ï¼Œç›¸å¯¹äº\"%s\"ï¼Œä½äº%08Xï¼Œé•¿åº¦%dï¼Œä¼˜å…ˆçº§ %dï¼Œæ¬¡ä¼˜å…ˆçº§ \"%s\"", h.Proc.c_str(), h.RelLib.c_str(), h.Addr, h.Len, h.Priority, h.SubPriority.c_str());
+			for (auto& h : *SortedHooks[i + 1])
+				Log::WriteLine("é’©å­\"%s\"ï¼Œç›¸å¯¹äº\"%s\"ï¼Œä½äº%08Xï¼Œé•¿åº¦%dï¼Œä¼˜å…ˆçº§ %dï¼Œæ¬¡ä¼˜å…ˆçº§ \"%s\"", h.Proc.c_str(), h.RelLib.c_str(), h.Addr, h.Len, h.Priority, h.SubPriority.c_str());
+			if (!Conflict)
+			{
+				wchar_t ErrorStr[1000];
+				swprintf_s(ErrorStr, 1000, L"æ£€æµ‹åˆ°ä½äº 0x%08X å’Œ 0x%08X çš„é’©å­å†²çªï¼Œè¯¦è§ Syringe.log ã€‚", Addr1, Addr2);
+				MessageBoxW(NULL, ErrorStr, VersionLString, MB_OK | MB_ICONERROR);
+			}
+			Conflict = true;
+		}
+	}
+	return Conflict;
+}
 
 bool HookAnalyzer::GenerateINJ()
 {
