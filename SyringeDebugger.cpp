@@ -1022,19 +1022,16 @@ void SyringeDebugger::PreloadData()
 		pArr[i].TargetHash = QuickHashCStrUpper(DLLShort[i].c_str());
 	}
 
-	if (RunningYR)
-	{
-		Log::WriteLine(__FUNCTION__ ": 正在写入运行前信息……");
-		//Log::WriteLine(__FUNCTION__ ": 假定启动了标准的YR V1.001。");
-		Database.CreateData();
-		Log::WriteLine(__FUNCTION__ ": 运行前信息创建完毕。");
-		Database.WriteToStream();
-		for (auto& p : LibExt)Database.CopyAndPush(p.second.GetMemCopy());
-		Database.CopyAndPushEnd();
-		Log::WriteLine(__FUNCTION__ ": 运行前信息打包完毕。");
-		Database.SendData();
-		Log::WriteLine(__FUNCTION__ ": 运行前信息写入完毕。");
-	}
+	Log::WriteLine(__FUNCTION__ ": 正在写入运行前信息……");
+	//Log::WriteLine(__FUNCTION__ ": 假定启动了标准的YR V1.001。");
+	Database.CreateData();
+	Log::WriteLine(__FUNCTION__ ": 运行前信息创建完毕。");
+	Database.WriteToStream();
+	for (auto& p : LibExt)Database.CopyAndPush(p.second.GetMemCopy());
+	Database.CopyAndPushEnd();
+	Log::WriteLine(__FUNCTION__ ": 运行前信息打包完毕。");
+	Database.SendData();
+	Log::WriteLine(__FUNCTION__ ": 运行前信息写入完毕。");
 
 
 	if (GenerateINJ)

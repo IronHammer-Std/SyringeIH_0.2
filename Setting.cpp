@@ -11,7 +11,6 @@ bool ShowHookAnalysis_ByLib = false;
 bool ShowHookAnalysis_ByAddr = false;
 std::vector<int> AddrRestriction;
 std::vector<std::string> LibRestriction;
-bool RunningYR = true;
 bool RemoteDatabaseDump = false;
 bool InfiniteWaitForDebug = false;
 bool ExceptionReportAlwaysFull = false;

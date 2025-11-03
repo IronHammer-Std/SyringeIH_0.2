@@ -27,7 +27,6 @@ extern std::vector<int> AddrRestriction;
 extern std::vector<std::string> LibRestriction;
 extern JsonFile Setting;
 
-extern bool RunningYR;
 extern bool RemoteDatabaseDump;
 extern bool InfiniteWaitForDebug;
 extern bool ExceptionReportAlwaysFull;
