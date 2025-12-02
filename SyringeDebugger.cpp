@@ -1294,6 +1294,7 @@ void SyringeDebugger::OutputProcModulePaths()
 DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 {
 	auto const exceptCode = dbgEvent.u.Exception.ExceptionRecord.ExceptionCode;
+	//Log::WriteLine(__FUNCTION__ ": 异常代码: 0x%08X (%s)", exceptCode, GetExcStr(exceptCode).c_str());
 
 	if(exceptCode == EXCEPTION_BREAKPOINT)
 		//整个载入流程都在这了。不用管Return，哥们，这里写代码的顺序就是执行的顺序，这个函数会连续执行好几千次，从前到后把每一块执行完毕
@@ -1442,6 +1443,21 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		DWORD continueStatus = DBG_CONTINUE;
 		bool wasBP = false;
 
+		/*
+		static std::map<int, std::string> event_str = {
+			{ 1, "EXCEPTION_DEBUG_EVENT" },
+			{ 2, "CREATE_THREAD_DEBUG_EVENT" },
+			{ 3, "CREATE_PROCESS_DEBUG_EVENT" },
+			{ 4, "EXIT_THREAD_DEBUG_EVENT" },
+			{ 5, "EXIT_PROCESS_DEBUG_EVENT" },
+			{ 6, "LOAD_DLL_DEBUG_EVENT" },
+			{ 7, "UNLOAD_DLL_DEBUG_EVENT" },
+			{ 8, "OUTPUT_DEBUG_STRING_EVENT" },
+			{ 9, "RIP_EVENT" },
+		};
+		Log::WriteLine(__FUNCTION__ ": 收到调试事件：%s", event_str[dbgEvent.dwDebugEventCode].c_str());
+		*/
+
 		switch(dbgEvent.dwDebugEventCode)
 		{
 		case CREATE_PROCESS_DEBUG_EVENT:
@@ -1477,24 +1493,6 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		case OUTPUT_DEBUG_STRING_EVENT:
 			int byteSize = dbgEvent.u.DebugString.nDebugStringLength;
 
-			/*
-			{
-				std::vector<char> Buf;
-				Buf.resize(byteSize);
-				ReadMem(dbgEvent.u.DebugString.lpDebugStringData, Buf.data(), byteSize);
-				std::string Out;
-				char Buf1[100];
-				for (auto& c : Buf) {
-					itoa((int)c, Buf1, 16);
-					Out += Buf1;
-					Out += ' ';
-				}
-				Log::WriteLine(
-					__FUNCTION__ ": 输出调试字符串(HEX)：%s",
-					Out.c_str());
-			}
-			*/
-
 			if (dbgEvent.u.DebugString.fUnicode) {
 				std::wstring outputString((byteSize / 2) + 1, L'\0');
 				ReadMem(dbgEvent.u.DebugString.lpDebugStringData, &outputString[0], byteSize);
@@ -1514,8 +1512,10 @@ void SyringeDebugger::Run(std::string_view const arguments)
 
 		if(dbgEvent.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT) {
 			exit_code = dbgEvent.u.ExitProcess.dwExitCode;
+			//let it go until the debuggee no longer exists
 			break;
 		} else if(dbgEvent.dwDebugEventCode == RIP_EVENT) {
+			//let it go until the debuggee no longer exists
 			break;
 		}
 
@@ -1526,12 +1526,15 @@ void SyringeDebugger::Run(std::string_view const arguments)
 			DebugSetProcessKillOnExit(FALSE);
 			SymCleanup(pInfo.hProcess);
 			CloseHandle(pInfo.hProcess);
+			DebugActiveProcessStop(pInfo.dwProcessId);
 			Log::WriteLine(__FUNCTION__ ": Syringe将分离并结束运行，已注入的代码将保留。");
 			Log::WriteLine();
 			return;
 		}
 	}
 
+	//Detach or stop debugging
+	DebugActiveProcessStop(pInfo.dwProcessId);
 	SymCleanup(pInfo.hProcess);
 	CloseHandle(pInfo.hProcess);
 
@@ -1575,12 +1578,12 @@ void SyringeDebugger::RetrieveInfo()
 		pImGetProcAddress = nullptr;
 
 		for(auto const& import : pe.GetImports()) {
-			Log::WriteLine(
-				__FUNCTION__ ": 可执行文件依赖于库：%s", import.Name.c_str());
+			//Log::WriteLine(
+			//	__FUNCTION__ ": 可执行文件依赖于库：%s", import.Name.c_str());
 			if(_strcmpi(import.Name.c_str(), "KERNEL32.DLL") == 0) {
 				for(auto const& thunk : import.vecThunkData) {
-					Log::WriteLine(
-						__FUNCTION__ ": \t导入函数：%s ADDR 0x%08X", thunk.Name.c_str(), dwImageBase + thunk.Address);
+					//Log::WriteLine(
+					//	__FUNCTION__ ": \t导入函数：%s ADDR 0x%08X", thunk.Name.c_str(), dwImageBase + thunk.Address);
 					if(_strcmpi(thunk.Name.c_str(), "GETPROCADDRESS") == 0) {
 						pImGetProcAddress = reinterpret_cast<void*>(dwImageBase + thunk.Address);
 					} else if(_strcmpi(thunk.Name.c_str(), "LOADLIBRARYA") == 0) {
