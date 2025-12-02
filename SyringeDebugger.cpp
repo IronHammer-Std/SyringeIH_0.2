@@ -1149,6 +1149,11 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 						return lhs.BaseAddr < rhs.BaseAddr;
 					});
 				int j = 1;
+				if (!LibBase.empty() && LibBase[0].BaseAddr < 0x10000)
+				{
+					//移除异常的低地址模块
+					LibBase.erase(LibBase.begin());
+				}
 				for (auto p : LibBase)
 				{
 					auto Str = UnicodetoANSI(p.Name);
@@ -1519,6 +1524,7 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		if (PrepareForDetach)
 		{
 			DebugSetProcessKillOnExit(FALSE);
+			SymCleanup(pInfo.hProcess);
 			CloseHandle(pInfo.hProcess);
 			Log::WriteLine(__FUNCTION__ ": Syringe将分离并结束运行，已注入的代码将保留。");
 			Log::WriteLine();
