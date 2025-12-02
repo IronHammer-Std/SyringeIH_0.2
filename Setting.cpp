@@ -44,7 +44,27 @@ std::string GetStringFromFile(const char* FileName)
     fread(FileStr, 1, Pos, File);
     FileStr[Pos] = 0;
 
-    std::string LoadStr = FileStr;
+    //std::string LoadStr = FileStr;
+	// skip BOM
+	std::string LoadStr;
+    std::string UnicodetoUTF8(const std::wstring& Unicode);
+	if (Pos >= 3 && (unsigned char)FileStr[0] == 0xEF && (unsigned char)FileStr[1] == 0xBB && (unsigned char)FileStr[2] == 0xBF)
+	{
+		LoadStr = std::string(FileStr + 3, Pos - 3);
+	}
+    else if (Pos >= 2 && (unsigned char)FileStr[0] == 0xFF && (unsigned char)FileStr[1] == 0xFE)
+    {
+		LoadStr = UnicodetoUTF8(std::wstring((wchar_t*)(FileStr + 2), (Pos - 2) / 2));
+	}
+	else if (Pos >= 2 && (unsigned char)FileStr[0] == 0xFE && (unsigned char)FileStr[1] == 0xFF)
+	{
+		//手动反转
+        std::wstring TempWStr((wchar_t*)(FileStr + 2), (Pos - 2) / 2);
+		for (auto& ch : TempWStr)
+            ch = (ch >> 8) | (ch << 8);
+		LoadStr = UnicodetoUTF8(TempWStr);
+    }
+
     delete[]FileStr;
     return LoadStr;
 }
