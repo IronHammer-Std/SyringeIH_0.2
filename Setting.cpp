@@ -64,6 +64,10 @@ std::string GetStringFromFile(const char* FileName)
             ch = (ch >> 8) | (ch << 8);
 		LoadStr = UnicodetoUTF8(TempWStr);
     }
+	else
+	{
+        LoadStr = FileStr;
+	}
 
     delete[]FileStr;
     return LoadStr;
