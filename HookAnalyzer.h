@@ -26,7 +26,7 @@ public:
 	std::unordered_map<std::string, HookAnalyzeData> HookMap;
 	std::unordered_map<int, std::vector<HookAnalyzeData>> ByAddress;
 	std::unordered_map<std::string, HookAnalyzeData> HookMapEx;
-	std::unordered_map<int, std::vector<HookAnalyzeData>> ByAddressEx;
+	std::unordered_map<std::string, std::unordered_map<int, std::vector<HookAnalyzeData>>> ByAddressEx;
 
 	void Add(HookAnalyzeData&&);
 	void AddEx(HookAnalyzeData&&);
