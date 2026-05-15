@@ -2112,7 +2112,7 @@ bool SyringeDebugger::ParseHooksSection(
 	auto const base = DLL.GetImageBase();
 	auto const filename = std::string_view(DLL.GetFilename());
 
-	std::string hookName, hookSub;
+	std::string hookName, hookSub, hookRel;
 	if (phooks)
 	{
 		IMAGE_SECTION_HEADER const& hooks = *phooks;
@@ -2157,15 +2157,25 @@ bool SyringeDebugger::ParseHooksSection(
 					auto const rawNamePtr = DLL.VirtualToRaw(h.hookNamePtr - base);
 					if (DLL.ReadCString(rawNamePtr, hookName)) {
 						//Log::WriteLine(__FUNCTION__ ": \t\tName \"%s\"", hookName.c_str());
+
+						hookRel.clear();
+						if (h.RelativeLibPtr)
+						{
+							if (!DLL.ReadCString(DLL.VirtualToRaw(h.RelativeLibPtr - base), hookRel))
+							{
+								hookRel.clear();
+							}
+						}
+
 						if (h.SubPriorityPtr)
 						{
 							if (DLL.ReadCString(DLL.VirtualToRaw(h.SubPriorityPtr - base), hookSub))
 							{
-								buffer.add(reinterpret_cast<void*>(h.hookAddr), filename, hookName, h.hookSize, h.Priority, hookSub, "");
+								buffer.add(reinterpret_cast<void*>(h.hookAddr), filename, hookName, h.hookSize, h.Priority, hookSub, hookRel);
 							}
-							else buffer.add(reinterpret_cast<void*>(h.hookAddr), filename, hookName, h.hookSize, h.Priority, "", "");
+							else buffer.add(reinterpret_cast<void*>(h.hookAddr), filename, hookName, h.hookSize, h.Priority, "", hookRel);
 						}
-						else buffer.add(reinterpret_cast<void*>(h.hookAddr), filename, hookName, h.hookSize, h.Priority, "", "");
+						else buffer.add(reinterpret_cast<void*>(h.hookAddr), filename, hookName, h.hookSize, h.Priority, "", hookRel);
 					}
 				}
 			}

@@ -270,6 +270,7 @@ struct alignas(16) hookaltdecl {
 	DWORD hookNamePtr;
 	int Priority;
 	DWORD SubPriorityPtr;
+	DWORD RelativeLibPtr;
 };
 
 struct alignas(16) hostdecl {
