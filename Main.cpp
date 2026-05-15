@@ -95,7 +95,5 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(nCmdShow);
 
-	MessageBoxA(NULL, "STOP", "STOP", MB_OK);
-
 	return Run(lpCmdLine);
 }
