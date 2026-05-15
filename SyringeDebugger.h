@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #define WIN32_LEAN_AND_MEAN
 //      WIN32_FAT_AND_STUPID
 
@@ -27,9 +27,10 @@ struct SharedMemHeader
 	DWORD DatabaseAddr;
 	DWORD DllRecordAddr;
 	int DllRecordCount;
-	int ReservedPtr;
+	int NullOutput;
 	int ReservedHandle;
-	int Reserved[7];
+	int InfiniteLoop;
+	int Reserved[6];
 };
 
 struct SharedMemRecord
@@ -91,6 +92,7 @@ public:
 	void Handle_StackDump(DEBUG_EVENT const& dbgEvent);
 	void Handle_ApplyHook();
 	void PreloadData();
+	void FinalizeErrorThread(DEBUG_EVENT const& dbgEvent);
 	DWORD StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool FromException);
 	void OutputProcModulePaths();
 
@@ -128,7 +130,8 @@ public:
 	std::vector<SharedMemRecord>LibBase;
 	int RemoteMapSuffix;
 	std::pair<DWORD, std::string> AnalyzeAddr(DWORD);
-	DWORD NullOutput;
+	DWORD NullOutput { 0 };
+	DWORD InfiniteLoop { 0 };
 	bool EverythingIsOK{ false };
 	bool PrepareForDetach{ false };
 	std::string SyringeExPath{ };

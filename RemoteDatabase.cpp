@@ -107,6 +107,7 @@ void RemoteDatabase::WriteToStream()
 	{
 		auto OfsBase = Push(hook.Base);
 		StrList[OfsBase] = hook.ProcName;
+		StrList[OfsBase + 0x14] = hook.RelativeLib;
 		OfsList[OfsHookDataList + i * 4] = OfsBase;
 		++i;
 	}
@@ -240,23 +241,18 @@ void RemoteDatabase::StartDaemonMonitor(bool FromException)
 	((void)FromException);
 
 	auto DaemonID = GetDaemonThreadID();
-	for (auto& [ID, Handle] : Dbg->Threads)
-	{
-		if (ID != DaemonID)Handle.Thread.suspend();
-	}
 	InitPipeName();
 	std::thread DaemonMonitor(
 		[this, DaemonID]()
 		{
 			IsDaemonMonitorOpen = true;
 			EnterDaemonLoop();
-			for (auto& [ID, Handle] : Dbg->Threads)
-			{
-				if (ID != DaemonID)Handle.Thread.resume();
-			}
 			IsDaemonMonitorOpen = false;
 		}
 	);
+
+
+
 	DaemonMonitor.detach();
 }
 
@@ -570,7 +566,8 @@ void RemoteDatabase::CreateData()
 	strcpy(Exe->AbsPath, (ExecutableDirectoryPath()+"\\"+ Dbg->exe).c_str());
 	strcpy(Exe->FileName, Dbg->exe.c_str());
 
-	for (auto& pp : Dbg->Analyzer.ByAddressEx)
+	for (auto& pl : Dbg->Analyzer.ByAddressEx)
+		for(auto& pp : pl.second)
 	{
 		Addr.emplace_back();
 		auto& ad = Addr.back();
@@ -615,10 +612,13 @@ void RemoteDatabase::CreateData()
 		auto str{ sv.data() + AnalyzerDelim + ph->proc };
 
 		hk.ProcName = ph->proc;
+		hk.RelativeLib = ph->RelativeLib;
+
 		hk.Base.HookAddress = Dbg->Analyzer.HookMap[str].Addr;
 		hk.Base.OverrideLength = ph->num_overridden;
 		hk.Base.LibID = QuickHashCStrUpper(ph->lib);
 		hk.Base.HookID = QuickHashCStrUpper(str.c_str());
+		
 	}
 }
 

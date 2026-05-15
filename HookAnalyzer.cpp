@@ -110,7 +110,6 @@ bool HookAnalyzer::HasHookConflict()
 				Conflict = true;
 			}
 		}
-		return Conflict;
 	}
 	return Conflict;
 }

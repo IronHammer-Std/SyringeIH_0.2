@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "Setting.h"
 #include "Handle.h"
@@ -116,6 +116,8 @@ struct AddrRemoteData
 	DWORD HookHeaderAddr;
 };
 
+static_assert(sizeof(AddrRemoteData::Base) == 40);
+
 struct AddrHiddenHeader
 {
 	DWORD ActiveHookCount;
@@ -134,12 +136,16 @@ struct HookRemoteData
 		DWORD LibID;
 		DWORD HookAddress;
 		size_t OverrideLength;
-		int dwReserved[3];
+		const char* RelativeLib;
+		int dwReserved[2];
 	}Base;
 
 	std::string ProcName;
+	std::string RelativeLib;
 	//std::string LibName;
 };
+
+static_assert(sizeof(HookRemoteData::Base) == 32);
 
 struct MemCopyData
 {
@@ -153,7 +159,7 @@ private:
 	size_t size{ 0 };
 public:
 	template<typename T>
-	size_t Push(size_t ExtBytes)//·µ»ØĞ´ÈëµÄÍ·Æ«ÒÆÁ¿
+	size_t Push(size_t ExtBytes)//è¿”å›å†™å…¥çš„å¤´åç§»é‡
 	{
 		auto sz = size;
 		size += sizeof(T)+ExtBytes;
@@ -190,7 +196,7 @@ private:
 	std::vector<BYTE> Buffer;
 public:
 	template<typename T>
-	size_t Push(const T& Data, size_t ExtBytes)//·µ»ØĞ´ÈëµÄÍ·Æ«ÒÆÁ¿
+	size_t Push(const T& Data, size_t ExtBytes)//è¿”å›å†™å…¥çš„å¤´åç§»é‡
 	{
 		auto pData = (const BYTE*)&Data;
 		auto sz = Buffer.size();
@@ -199,7 +205,7 @@ public:
 		return sz;
 	}
 
-	size_t PushBytes(const BYTE* Data, size_t Count)//·µ»ØĞ´ÈëµÄÍ·Æ«ÒÆÁ¿
+	size_t PushBytes(const BYTE* Data, size_t Count)//è¿”å›å†™å…¥çš„å¤´åç§»é‡
 	{
 		auto sz = Buffer.size();
 		Buffer.resize(sz + Count);
@@ -304,7 +310,7 @@ public:
 	}
 
 	template<typename T>
-	size_t Push(const T& Data,size_t ExtBytes = 0)//·µ»ØĞ´ÈëµÄÍ·Æ«ÒÆÁ¿
+	size_t Push(const T& Data,size_t ExtBytes = 0)//è¿”å›å†™å…¥çš„å¤´åç§»é‡
 	{
 		return Stm.Push(Data, ExtBytes);
 	}

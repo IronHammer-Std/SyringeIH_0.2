@@ -13,6 +13,14 @@ DWORD __cdecl Output(int* R)
 	return 0;
 }
 
+void InfiniteLoop()
+{
+	while (true)
+	{
+		Sleep(1000);
+	}
+}
+
 struct _USTRING
 {
 	unsigned short Len;
@@ -109,7 +117,8 @@ void PrintModuleList(DWORD Header)
 
 	auto pHeader = Mapper.OffsetPtr<SharedMemHeader>(0);
 	auto pArr = Mapper.OffsetPtr<SharedMemRecord>(sizeof(SharedMemHeader));
-	pHeader->ReservedPtr = (int)Output;
+	pHeader->NullOutput = (int)Output;
+	pHeader->InfiniteLoop = (int)InfiniteLoop;
 	for (int i = 0; i < pHeader->RecordCount; i++)
 	{
 		Targets[pArr[i].TargetHash] = i;

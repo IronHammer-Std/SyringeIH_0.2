@@ -89,6 +89,10 @@ std::pair<DWORD, std::string> SyringeDebugger::AnalyzeAddr(DWORD Addr)
 		auto sym = ModuleMap::GetSymbol(Addr);
 		if (!sym.second.empty())return std::make_pair(sym.first, ModuleMap::GetLibName(Addr) + "!" + UnicodetoANSI(sym.second));
 	}
+	if (LibBase.empty())
+	{
+		return std::make_pair(Addr, "UNKNOWN");
+	}
 	for (size_t i = 0; i < LibBase.size() - 1; i++)
 	{
 		if (LibBase[i].BaseAddr <= Addr && Addr < LibBase[i + 1].BaseAddr)
@@ -1131,7 +1135,8 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 			if (Mapper.Available() && hSyringeEx)
 			{
 				if (DLLs.size())while (!pHeader->WritingComplete);
-				NullOutput = pHeader->ReservedPtr;
+				NullOutput = pHeader->NullOutput;
+				InfiniteLoop = pHeader->InfiniteLoop;
 				auto pArr = Mapper.OffsetPtr<SharedMemRecord>(sizeof(SharedMemHeader));
 				for (size_t i = 0; i < DLLShort.size(); i++)
 				{
@@ -1360,8 +1365,21 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 
 DWORD SyringeDebugger::StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool FromException)
 {
+	Log::WriteLine(__FUNCTION__ ": Error Thread = %u, Daemon Thread = %u", dbgEvent.dwThreadId, Database.GetDaemonThreadID());
 	Handle_StackDump(dbgEvent);
+	FinalizeErrorThread(dbgEvent);
 	return Database.InitializeDaemon(FromException);
+}
+
+void SyringeDebugger::FinalizeErrorThread(DEBUG_EVENT const& dbgEvent)
+{
+	auto ErrorThread = dbgEvent.dwThreadId;
+	CONTEXT context;
+	context.ContextFlags = CONTEXT_CONTROL;
+	GetThreadContext(Threads[ErrorThread].Thread, &context);
+	context.Eip = InfiniteLoop;
+	context.ContextFlags = CONTEXT_CONTROL;
+	SetThreadContext(Threads[ErrorThread].Thread, &context);
 }
 
 

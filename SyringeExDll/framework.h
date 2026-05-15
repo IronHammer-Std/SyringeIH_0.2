@@ -15,8 +15,10 @@ struct SharedMemHeader
 	DWORD DatabaseAddr;
 	DWORD DllRecordAddr;
 	int DllRecordCount;
-	int ReservedPtr;
-	int Reserved[8];
+	int NullOutput;
+	int ReservedHandle;
+	int InfiniteLoop;
+	int Reserved[6];
 };
 
 class RemoteMapper
