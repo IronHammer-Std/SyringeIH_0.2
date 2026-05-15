@@ -126,7 +126,7 @@ public:
 	int LoadedCount{ 0 };
 	char ExLoadingLib[300];
 	RemoteMapper Mapper;
-	std::unordered_map<std::string, DWORD> LibAddr;
+	std::unordered_map<std::string, DWORD, UpperHash, UpperEqualPred> LibAddr;
 	std::vector<SharedMemRecord>LibBase;
 	int RemoteMapSuffix;
 	std::pair<DWORD, std::string> AnalyzeAddr(DWORD);

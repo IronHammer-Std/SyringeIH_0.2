@@ -96,6 +96,7 @@ void RemoteDatabase::WriteToStream()
 	{
 		auto OfsBase = Push(addr.Base);
 		PushBytes((const BYTE*)addr.HookID.data(), sizeof(DWORD) * addr.HookID.size());
+		StrList[OfsBase + 0x10] = addr.RelativeLib;
 		OfsList[OfsAddrDataList + i * 4] = OfsBase;
 		++i;
 	}
@@ -571,6 +572,7 @@ void RemoteDatabase::CreateData()
 	{
 		Addr.emplace_back();
 		auto& ad = Addr.back();
+		ad.RelativeLib = pl.first;
 		ad.Base.Addr = pp.first;
 		ad.Base.OverriddenCount = sizeof(hook_jmp);
 		for (auto& ph : pp.second)
@@ -585,8 +587,6 @@ void RemoteDatabase::CreateData()
 
 		ad.Base.HookDataAddr = HookStm.PushAligned(sz,16);//align by 16
 		ad.HookDataSize = sz;
-
-		AddrList[pp.first] = &Addr.back();
 	}
 	HookMem = std::move(Dbg->AllocMem(nullptr, HookStm.Size()));
 	Log::WriteLine(__FUNCTION__ ": 远程向 0x%08X 分配了 %d(0x%X) 个字节以存储钩子信息。", (DWORD)HookMem.get(), HookStm.Size(), HookStm.Size());
@@ -597,7 +597,7 @@ void RemoteDatabase::CreateData()
 		//Log::WriteLine("Alloc %d Bytes At %X", ad.HookDataSize, ad.Base.HookDataAddr);
 		ad.Base.HookDataAddr += sizeof(AddrHiddenHeader);
 		ad.HookOpAddr = ad.Base.HookDataAddr;
-		AddrList[ad.Base.Addr] = &ad;
+		AddrList[ad.RelativeLib][ad.Base.Addr] = &ad;
 	}
 
 	for (auto& ph : Dbg->v_AllHooks)
@@ -667,6 +667,34 @@ std::pair<DWORD, std::string> RemoteDatabase::AnalyzeHookAddr(DWORD RemoteAddr)
 	return std::make_pair(RemoteAddr- (DWORD)HookMem.get(), "钩子代码");
 }
 
+void RemoteDatabase::GenerateAbsAddrList()
+{
+	auto& LibAddr = Dbg->LibAddr;
+	for (auto& [lib, s] : AddrList)
+	{
+		for(auto& [addr, ad] : s)
+		{
+			if (lib.empty())
+			{
+				AbsAddrList[addr] = ad;
+				continue;
+			}
+
+			auto it = LibAddr.find(lib);
+			if (it != LibAddr.end())
+			{
+				DWORD AbsAddr = it->second + ad->Base.Addr;
+				AbsAddrList[AbsAddr] = ad;
+				Log::WriteLine(__FUNCTION__ ": 生成绝对地址：0x%08X = %s!0x%X", AbsAddr, lib.c_str(), ad->Base.Addr);
+			}
+			else
+			{
+				Log::WriteLine(__FUNCTION__ ": 无法生成绝对地址，未找到库 %s 的基址。", lib.c_str());
+			}
+		}
+	}
+}
+
 struct _USTRING
 {
 	unsigned short Len;
@@ -722,3 +750,4 @@ void RemoteBuf_Save(SyringeDebugger* Dbg, void* Addr, void* Buffer, size_t Size)
 {
 	Dbg->PatchMem(Addr, Buffer, Size);
 }
+

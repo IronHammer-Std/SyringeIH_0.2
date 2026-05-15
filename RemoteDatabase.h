@@ -107,10 +107,12 @@ struct AddrRemoteData
 		DWORD HookDataAddr;
 		int OverriddenCount;
 		int HookCount;
-		int dwReserved[6];
+		const char* RelativeLib;
+		int dwReserved[5];
 		//DWORD FirstHookIndex;//VLA Header
 	}Base;
 	std::vector<DWORD> HookID;
+	std::string RelativeLib;
 	size_t HookDataSize;
 	DWORD HookOpAddr;
 	DWORD HookHeaderAddr;
@@ -285,17 +287,27 @@ private:
 	std::unordered_map<std::string, DWORD> CopyList;
 	std::vector<MemCopyInfo> CopyAll;
 	std::unordered_map<std::string, CopyRange> CopyRangeList;
-	std::unordered_map<DWORD, AddrRemoteData*> AddrList;
+	std::unordered_map < std::string, std::unordered_map<DWORD, AddrRemoteData*>> AddrList;
+	std::unordered_map<DWORD, AddrRemoteData*> AbsAddrList;
 
 	DWORD RemoteDBStart, RemoteDBEnd;
 	DoubleInteractData Interact;
 public:
 	static const size_t PipeBufferSize = 32768;// 32KB
 
+	inline AddrRemoteData* GetMem(const std::string& RelativeLib, DWORD HookAddr)
+	{
+		auto it = AddrList.find(RelativeLib);
+		if (it == AddrList.end())return nullptr;
+		auto it2 = it->second.find(HookAddr);
+		if (it2 == it->second.end())return nullptr;
+		return it2->second;
+	}
+
 	inline AddrRemoteData* GetMem(DWORD HookAddr)
 	{
-		auto it = AddrList.find(HookAddr);
-		if (it == AddrList.end())return nullptr;
+		auto it = AbsAddrList.find(HookAddr);
+		if (it == AbsAddrList.end())return nullptr;
 		return it->second;
 	}
 
@@ -339,6 +351,7 @@ public:
 	size_t CopyAndPush(DWORD Start, DWORD End);
 	void CopyAndPush(const std::vector<MemCopyInfo>&);
 	void CopyAndPushEnd();
+	void GenerateAbsAddrList();
 
 	bool EnableDaemon();
 	void EnterDaemonLoop();

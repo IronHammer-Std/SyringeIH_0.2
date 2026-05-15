@@ -1168,6 +1168,8 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 					++j;
 				}
 
+				Database.GenerateAbsAddrList();
+
 				for (auto& it : BreakpointRel)
 				{
 					for (auto& i : it.second.hooks)
