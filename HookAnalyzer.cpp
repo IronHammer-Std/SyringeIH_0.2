@@ -112,6 +112,7 @@ bool HookAnalyzer::HasHookConflict()
 		}
 		return Conflict;
 	}
+	return Conflict;
 }
 
 bool HookAnalyzer::GenerateINJ()
