@@ -619,9 +619,11 @@ bool LoadSymbolsForDLL(HANDLE hProcess, const std::wstring& dllName, const std::
 	}
 	else
 	{
+		Log::WriteLine(__FUNCTION__": 模块调试信息：基址 = 0x%016llX, 大小 = 0x%X, %s"
+			, hlp.BaseOfImage, hlp.ImageSize, hlp.LineNumbers ? "启用行号" : "禁用行号");
 		//output infor hlp
-		Log::WriteLine(__FUNCTION__": hlp.BaseOfImage = %016llX", hlp.BaseOfImage);
-		Log::WriteLine(__FUNCTION__": hlp.ImageSize = %u", hlp.ImageSize);
+		//Log::WriteLine(__FUNCTION__": hlp.BaseOfImage = 0x%016llX", hlp.BaseOfImage);
+		//Log::WriteLine(__FUNCTION__": hlp.ImageSize = 0x%X", hlp.ImageSize);
 		//Log::WriteLine(__FUNCTION__": hlp.TimeDateStamp = %u", hlp.TimeDateStamp);
 		//Log::WriteLine(__FUNCTION__": hlp.CheckSum = %u", hlp.CheckSum);
 		//Log::WriteLine(__FUNCTION__": hlp.ModuleName = %s", UnicodetoANSI(hlp.ModuleName).c_str());
@@ -629,9 +631,9 @@ bool LoadSymbolsForDLL(HANDLE hProcess, const std::wstring& dllName, const std::
 		//Log::WriteLine(__FUNCTION__": hlp.LoadedImageName = %s", UnicodetoANSI(hlp.LoadedImageName).c_str());
 		//Log::WriteLine(__FUNCTION__": hlp.TypeInfo = %s", hlp.TypeInfo ? "true" : "false");
 		//Log::WriteLine(__FUNCTION__": hlp.SymType = %d", hlp.SymType);
-		Log::WriteLine(__FUNCTION__": hlp.NumSyms = %u", hlp.NumSyms);
+		//Log::WriteLine(__FUNCTION__": hlp.NumSyms = %u", hlp.NumSyms);
 		//Log::WriteLine(__FUNCTION__": hlp.Publics  = %s", hlp.Publics ? "true" : "false");
-		Log::WriteLine(__FUNCTION__": hlp.LineNumbers  = %s", hlp.LineNumbers ? "true" : "false");
+		//Log::WriteLine(__FUNCTION__": hlp.LineNumbers  = %s", hlp.LineNumbers ? "true" : "false");
 		
 		/*
 		SymEnumSymbolsW(hProcess, baseAddr, L"*",
