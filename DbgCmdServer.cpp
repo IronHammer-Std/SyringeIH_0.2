@@ -5,10 +5,14 @@
 using DebugCommandMethodFunction = DebugCommandReturnType(*)(SyringeDebugger* Dbg, JsonObject Arguments);
 
 DebugCommandReturnType ProcessDebugCommand_GetVersion(SyringeDebugger* Dbg, JsonObject Arguments);
+DebugCommandReturnType ProcessDebugCommand_GetAccessStr(SyringeDebugger* Dbg, JsonObject Arguments);
+DebugCommandReturnType ProcessDebugCommand_AnalyzeAddr(SyringeDebugger* Dbg, JsonObject Arguments);
 
 std::unordered_map<std::string, DebugCommandMethodFunction> DebugCommandMethodMap
 {
 	{"GetVersion", ProcessDebugCommand_GetVersion},
+	{"GetAccessStr", ProcessDebugCommand_GetAccessStr},
+	{"AnalyzeAddr", ProcessDebugCommand_AnalyzeAddr},
 	// {"ListModules", ProcessDebugCommand_ListModules},
 	// {"ReadMemory", ProcessDebugCommand_ReadMemory},
 	// {"WriteMemory", ProcessDebugCommand_WriteMemory},
@@ -63,5 +67,36 @@ DebugCommandReturnType ProcessDebugCommand_GetVersion(SyringeDebugger* Dbg, Json
 	auto Obj = F.GetObj();
 	Obj.AddString("Version", VersionString);
 	Obj.AddString("BuildDate", __DATE__ " " __TIME__);
+	return F;
+}
+
+DebugCommandReturnType ProcessDebugCommand_GetAccessStr(SyringeDebugger* Dbg, JsonObject Arguments)
+{
+	std::string GetAccessStr(HANDLE hProc, LPCVOID Ptr);
+	std::string S;
+	if (Arguments.Available() && Arguments.HasItem("Address"))
+	{
+		auto Address = Arguments.ItemInt("Address");
+		S = GetAccessStr(Dbg->pInfo.hProcess, (LPCVOID)Address);
+	}
+	JsonFile F;
+	auto Obj = F.GetObj();
+	Obj.SetString(S);
+	return F;
+}
+
+DebugCommandReturnType ProcessDebugCommand_AnalyzeAddr(SyringeDebugger* Dbg, JsonObject Arguments)
+{
+	std::string S;
+	DWORD Addr = 0;
+	if (Arguments.Available() && Arguments.HasItem("Address"))
+	{
+		auto Address = Arguments.ItemInt("Address");
+		std::tie(Addr, S) = Dbg->AnalyzeAddr((DWORD)Address);
+	}
+	JsonFile F;
+	auto Obj = F.GetObj();
+	Obj.AddString("Source", S);
+	Obj.AddInt("Offset", Addr);
 	return F;
 }
