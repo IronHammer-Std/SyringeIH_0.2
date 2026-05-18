@@ -850,24 +850,26 @@ void SyringeDebugger::InitializeSymbols()
 	g_symInitialized = true;
 }
 
-void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
+bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 {
-	auto const exceptCode = dbgEvent.u.Exception.ExceptionRecord.ExceptionCode;
-	auto const exceptAddr = dbgEvent.u.Exception.ExceptionRecord.ExceptionAddress;
-	auto const AccessAddr = dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[1];
+	auto& rcd = dbgEvent.u.Exception.ExceptionRecord;
+	auto const exceptCode = rcd.ExceptionCode;
+	auto const exceptAddr = rcd.ExceptionAddress;
+	auto const AccessAddr = rcd.ExceptionInformation[1];
+
+	auto Continuable = rcd.ExceptionFlags != EXCEPTION_NONCONTINUABLE;
+
+	//Same 
 
 	InitializeSymbols();
 
-	auto& rcd = dbgEvent.u.Exception.ExceptionRecord;
-	//--HOTFIX--
 	{
-		Log::WriteLine(__FUNCTION__ ": Exception Data :");
-		Log::WriteLine(__FUNCTION__ ": ADDR %08X CODE %08X FLAG %08X", rcd.ExceptionAddress, rcd.ExceptionCode, rcd.ExceptionFlags);
-		Log::WriteLine(__FUNCTION__ ": PARAM %d", rcd.NumberParameters);
-		for (DWORD i = 0; i < 15; ++i)
+		Log::WriteLine(__FUNCTION__ ": ExceptionFlags = %08X", rcd.ExceptionFlags);
+		Log::WriteLine(__FUNCTION__ ": 共 %d 个参数", rcd.NumberParameters);
+		for (DWORD i = 0; i < rcd.NumberParameters; ++i)
 		{
 			auto [Rel, Str] = AnalyzeAddr(rcd.ExceptionInformation[i]);
-			Log::WriteLine(__FUNCTION__ ": %d : 0x%08X（%s+%X）[访问权限：%s]", i, rcd.ExceptionInformation[i], Str.c_str(), Rel, 
+			Log::WriteLine(__FUNCTION__ ": 参数 %d : 0x%08X（%s+%X）[访问权限：%s]", i, rcd.ExceptionInformation[i], Str.c_str(), Rel, 
 				GetAccessStr(pInfo.hProcess, (LPCVOID)rcd.ExceptionInformation[i]).c_str());
 		}
 	}
@@ -1007,6 +1009,8 @@ void SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 			MessageBoxW(NULL, L"Syringe遇到了异常。点击确定以继续运行程序。", VersionLString, MB_OK);
 		}
 	}
+
+	return Continuable;
 
 }
 
@@ -1367,9 +1371,18 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 
 DWORD SyringeDebugger::StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool FromException)
 {
-	Log::WriteLine(__FUNCTION__ ": Error Thread = %u, Daemon Thread = %u", dbgEvent.dwThreadId, Database.GetDaemonThreadID());
-	Handle_StackDump(dbgEvent);
+	auto Continuable = Handle_StackDump(dbgEvent);
 	FinalizeErrorThread(dbgEvent);
+
+	if (!Continuable)
+	{
+		Log::WriteLine(__FUNCTION__ ": 无法处理错误，程序不可继续运行。");
+		return DBG_EXCEPTION_NOT_HANDLED;
+	}
+	else
+	{
+		Log::WriteLine(__FUNCTION__ ": 出错线程ID %u，守护线程ID %u", dbgEvent.dwThreadId, Database.GetDaemonThreadID());
+	}
 	return Database.InitializeDaemon(FromException);
 }
 
