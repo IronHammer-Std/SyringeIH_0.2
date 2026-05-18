@@ -36,6 +36,8 @@ std::unordered_map<std::string, DebugCommandMethodFunction> DebugCommandMethodMa
 	// {"ListExtensions", ProcessDebugCommand_ListExtensions}
 };
 
+std::string ANSItoUTF8(const std::string& ANSI);
+
 DebugCommandReturnType
 ProcessDebugCommand(
 	SyringeDebugger* Dbg, 
@@ -81,7 +83,7 @@ DebugCommandReturnType ProcessDebugCommand_GetAccessStr(SyringeDebugger* Dbg, Js
 	}
 	JsonFile F;
 	auto Obj = F.GetObj();
-	Obj.SetString(S);
+	Obj.SetString(ANSItoUTF8(S));
 	return F;
 }
 
@@ -96,7 +98,7 @@ DebugCommandReturnType ProcessDebugCommand_AnalyzeAddr(SyringeDebugger* Dbg, Jso
 	}
 	JsonFile F;
 	auto Obj = F.GetObj();
-	Obj.AddString("Source", S);
+	Obj.AddString("Source", ANSItoUTF8(S));
 	Obj.AddInt("Offset", Addr);
 	return F;
 }

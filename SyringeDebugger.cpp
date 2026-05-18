@@ -67,9 +67,14 @@ std::wstring ANSItoUnicode(const std::string& ANSI)
 }
 
 // UTF-8字符集转换成ANSI
-std::string UTF8toANSI(const std::string& MBCS)
+std::string UTF8toANSI(const std::string& UTF8)
 {
-	return UnicodetoANSI(UTF8toUnicode(MBCS));
+	return UnicodetoANSI(UTF8toUnicode(UTF8));
+}
+
+std::string ANSItoUTF8(const std::string& ANSI)
+{
+	return UnicodetoUTF8(ANSItoUnicode(ANSI));
 }
 
 std::pair<DWORD ,std::wstring>  ResolveFunctionSymbol(HANDLE hProcess, DWORD address);

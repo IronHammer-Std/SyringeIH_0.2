@@ -408,7 +408,9 @@ void RemoteDatabase::DaemonCommLoop()
 	ProcessReceivedMessage(DaemonCommBuffer.data(), ERROR_SUCCESS);
 }
 
-std::string UTF8toANSI(const std::string& MBCS);
+std::string UTF8toANSI(const std::string& UTF8);
+
+std::string ANSItoUTF8(const std::string& ANSI);
 
 std::string PackErrorMsg(const std::string& Msg, LONG Error)
 {
