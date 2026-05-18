@@ -882,6 +882,7 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 	InitializeSymbols();
 
 	{
+		Log::WriteLine(__FUNCTION__ ": 异常线程ID = %u", dbgEvent.dwThreadId);
 		Log::WriteLine(__FUNCTION__ ": ExceptionFlags = %08X", rcd.ExceptionFlags);
 		Log::WriteLine(__FUNCTION__ ": 共 %d 个参数", rcd.NumberParameters);
 		for (DWORD i = 0; i < rcd.NumberParameters; ++i)
@@ -1402,7 +1403,7 @@ DWORD SyringeDebugger::StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool Fr
 	if(Skipped)
 		return DBG_EXCEPTION_NOT_HANDLED;
 
-	Log::WriteLine(__FUNCTION__ ": 出错线程ID %u，守护线程ID %u", dbgEvent.dwThreadId, Database.GetDaemonThreadID());
+	Log::WriteLine(__FUNCTION__ ": 守护线程ID %u",  Database.GetDaemonThreadID());
 	return Database.InitializeDaemon(FromException);
 }
 
