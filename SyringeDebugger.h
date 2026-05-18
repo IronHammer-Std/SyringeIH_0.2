@@ -89,7 +89,7 @@ public:
 	void Run(std::string_view arguments);
 	DWORD HandleException(DEBUG_EVENT const& dbgEvent);
 	DWORD Handle_BreakPoint(DEBUG_EVENT const& dbgEvent);
-	bool Handle_StackDump(DEBUG_EVENT const& dbgEvent);
+	bool Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skipped);
 	void Handle_ApplyHook();
 	void PreloadData();
 	void FinalizeErrorThread(DEBUG_EVENT const& dbgEvent);
@@ -135,7 +135,7 @@ public:
 	bool EverythingIsOK{ false };
 	bool PrepareForDetach{ false };
 	std::string SyringeExPath{ };
-
+	std::set<std::pair<DWORD, LPVOID>> StackDumpProcessedAddress{ };
 
 	void FindDLLsLoop(const FindFile& file, const std::string& Path, bool AlwaysLoad);
 

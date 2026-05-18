@@ -850,7 +850,7 @@ void SyringeDebugger::InitializeSymbols()
 	g_symInitialized = true;
 }
 
-bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
+bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skipped)
 {
 	auto& rcd = dbgEvent.u.Exception.ExceptionRecord;
 	auto const exceptCode = rcd.ExceptionCode;
@@ -858,6 +858,17 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent)
 	auto const AccessAddr = rcd.ExceptionInformation[1];
 
 	auto Continuable = rcd.ExceptionFlags != EXCEPTION_NONCONTINUABLE;
+
+	if (StackDumpProcessedAddress.count({ exceptCode, exceptAddr }))
+	{
+		Skipped = true;
+		return Continuable;
+	}
+	else
+	{
+		Skipped = false;
+		StackDumpProcessedAddress.insert({ exceptCode, exceptAddr });
+	}
 
 	//Same 
 
@@ -1371,7 +1382,8 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 
 DWORD SyringeDebugger::StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool FromException)
 {
-	auto Continuable = Handle_StackDump(dbgEvent);
+	bool Skipped = false;
+	auto Continuable = Handle_StackDump(dbgEvent, Skipped);
 	FinalizeErrorThread(dbgEvent);
 
 	if (!Continuable)
@@ -1379,10 +1391,11 @@ DWORD SyringeDebugger::StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool Fr
 		Log::WriteLine(__FUNCTION__ ": 无法处理错误，程序不可继续运行。");
 		return DBG_EXCEPTION_NOT_HANDLED;
 	}
-	else
-	{
-		Log::WriteLine(__FUNCTION__ ": 出错线程ID %u，守护线程ID %u", dbgEvent.dwThreadId, Database.GetDaemonThreadID());
-	}
+
+	if(Skipped)
+		return DBG_EXCEPTION_NOT_HANDLED;
+
+	Log::WriteLine(__FUNCTION__ ": 出错线程ID %u，守护线程ID %u", dbgEvent.dwThreadId, Database.GetDaemonThreadID());
 	return Database.InitializeDaemon(FromException);
 }
 
