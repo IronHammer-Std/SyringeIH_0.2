@@ -49,4 +49,6 @@ extern std::string DefaultExtPack;
 extern std::string DefaultExecName;
 extern std::string DefaultCmdLine;
 
+extern bool LogDaemonInteraction;
+
 #include "Version.h"

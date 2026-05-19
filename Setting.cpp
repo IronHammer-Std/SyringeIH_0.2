@@ -31,6 +31,8 @@ std::string DefaultExtPack;
 std::set<HookIdx> GlobalDisableHooks;
 std::set<HookIdx> GlobalEnableHooks;
 
+bool LogDaemonInteraction = false;
+
 std::string GetStringFromFile(const char* FileName)
 {
     FileHandle File(fopen(FileName, "r"));

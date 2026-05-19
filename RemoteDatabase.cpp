@@ -421,7 +421,10 @@ void RemoteDatabase::DaemonCommLoop()
 		return;
 	}
 	DaemonCommBuffer[bytesRead] = '\0';
-	Log::WriteLine(__FUNCTION__": 接收到守护线程管道数据：%s", DaemonCommBuffer.data());
+	if (LogDaemonInteraction)
+	{
+		Log::WriteLine(__FUNCTION__": 接收到守护线程管道数据：%s", DaemonCommBuffer.data());
+	}
 	ProcessReceivedMessage(DaemonCommBuffer.data(), ERROR_SUCCESS);
 }
 
@@ -499,7 +502,10 @@ void RemoteDatabase::ProcessReceivedMessage(const char* Msg, LONG Error)
 	}
 	else Result = PackErrorMsg(Msg, Error);
 
-	Log::WriteLine(__FUNCTION__": 向管道发送数据：%s", Result.c_str());
+	if (LogDaemonInteraction)
+	{
+		Log::WriteLine(__FUNCTION__": 向管道发送数据：%s", Result.c_str());
+	}
 
 	if (!WriteFile(DaemonPipe, Result.c_str(),
 		static_cast<DWORD>(Result.size()),
