@@ -23,7 +23,7 @@ std::vector<std::string> SplitLines(const std::string& Str)
     }
     return Lines;
 }
-
+std::string UTF8toANSI(const std::string& UTF8);
 
 void ProcessedDumpInfoHandler::AddString(char const* pFormat, ...)
 {
@@ -62,7 +62,7 @@ void ProcessedDumpInfoHandler::Flush()
             else { // ProcessedDumpInfoEntry_Addr
                 if (!e.Processed.empty())
                 {
-                    for (auto& L : SplitLines(e.Processed))
+                    for (auto& L : SplitLines(UTF8toANSI(e.Processed)))
                     {
                         Log::WriteLine("%s%s", e.Prefix.c_str(), L.c_str());
                     }
