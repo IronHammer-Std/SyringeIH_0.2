@@ -63,7 +63,8 @@ struct DaemonData
 	DWORD lpReportStringWLen;
 	DWORD lpDebugPipeName;//at debugged process
 	DWORD lpDebugPipeNameLen;
-	int dwReserved[9];
+	BOOL ProcessReport;
+	int dwReserved[8];
 };
 
 static_assert(sizeof(DaemonData) == 64);

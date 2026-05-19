@@ -63,6 +63,9 @@
     <ClCompile Include="DbgCmdServer.cpp">
       <Filter>Main</Filter>
     </ClCompile>
+    <ClCompile Include="ProcessedDumpInfo.cpp">
+      <Filter>Main</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Handle.h">
@@ -117,6 +120,9 @@
       <Filter>Main</Filter>
     </ClInclude>
     <ClInclude Include="DbgCmdServer.h">
+      <Filter>Main</Filter>
+    </ClInclude>
+    <ClInclude Include="ProcessedDumpInfo.h">
       <Filter>Main</Filter>
     </ClInclude>
   </ItemGroup>

@@ -7,6 +7,7 @@
 #include "FindFile.h"
 #include "HookAnalyzer.h"
 #include "RemoteDatabase.h"
+#include "ProcessedDumpInfoHandler.h"
 
 #include <cstring>
 #include <iostream>
@@ -119,6 +120,7 @@ public:
 	HookAnalyzer Analyzer;
 	RemoteDatabase Database;
 	DisableHookIdxSet IdxSet;
+	ProcessedDumpInfoHandler InfoHandler;
 	std::unordered_map<std::string, LibExtData> LibExt;
 	std::vector<std::string> DLLs;
 	std::vector<std::string> DLLShort;

@@ -161,6 +161,7 @@
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="PortableExecutable.cpp" />
+    <ClCompile Include="ProcessedDumpInfo.cpp" />
     <ClCompile Include="RemoteDatabase.cpp" />
     <ClCompile Include="Setting.cpp" />
     <ClCompile Include="SymMap.cpp" />
@@ -178,6 +179,7 @@
     <ClInclude Include="HookAnalyzer.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="PortableExecutable.h" />
+    <ClInclude Include="ProcessedDumpInfo.h" />
     <ClInclude Include="RemoteDatabase.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Setting.h" />
