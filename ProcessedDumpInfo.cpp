@@ -1,6 +1,7 @@
 ﻿#include "ProcessedDumpInfo.h"
 #include <cstdio>
 #include <cstdarg>
+#include "ExtJson.h"
 
 void ProcessedDumpInfoHandler::AddString(char const* pFormat, ...)
 {
@@ -39,7 +40,7 @@ void ProcessedDumpInfoHandler::Flush()
             else { // ProcessedDumpInfoEntry_Addr
                 if (!e.Processed.empty())
                 {
-                    Log::WriteLine("%s", e.Processed.c_str());
+                    Log::WriteLine("%s%s", e.Prefix.c_str(), e.Processed.c_str());
                 }
             }
             }, entry);
@@ -58,4 +59,17 @@ void ProcessedDumpInfoHandler::Fillin(const std::vector<std::string> DescStr)
             // 若 DescStr 数量不足，剩余条目保持 Processed 为空
         }
     }
+}
+
+std::wstring ProcessedDumpInfoHandler::CollectAddrToJsonArray()
+{
+    std::wstring UTF8toUnicode(const std::string & UTF8);
+	std::vector<int> addresses;
+    for (const auto& entry : Entries) {
+        if (const auto* pAddr = std::get_if<ProcessedDumpInfoEntry_Addr>(&entry)) {
+            addresses.push_back((int)pAddr->Address);
+        }
+	}
+    JsonFile json{ cJSON_CreateIntArray(addresses.data(), (int)addresses.size()) };
+    return UTF8toUnicode(json.GetObj().GetText());
 }

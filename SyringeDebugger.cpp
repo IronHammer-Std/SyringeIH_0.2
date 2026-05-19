@@ -904,6 +904,7 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 	InfoHandler.AddString(
 		"地址： 0x%08X（%s+%X）[访问权限：%s]", 
 		exceptAddr, Str.c_str(), Rel, GetAccessStr(pInfo.hProcess, exceptAddr).c_str());
+	InfoHandler.AddAddr((DWORD)exceptAddr, "");
 	if (IsExecutable(pInfo.hProcess, (LPCVOID)exceptAddr))InfoHandler.AddString("发生异常的地址为可执行的代码。");
 	else InfoHandler.AddString("发生异常的地址不是代码，可能为分配的内存。");
 	if (ExceptionReportAlwaysFull || !bAVLogged)
@@ -925,6 +926,7 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 			access ? access : ("<未知行为：" + std::to_string(dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[0]) + ">").c_str(),
 			AccessAddr, Str2.c_str(), Rel2,
 			GetAccessStr(pInfo.hProcess, (LPCVOID)AccessAddr).c_str());
+		InfoHandler.AddAddr(AccessAddr, "");
 		if (IsExecutable(pInfo.hProcess, (LPCVOID)AccessAddr))InfoHandler.AddString("试图访问的地址为可执行的代码。");
 		else InfoHandler.AddString("试图访问的地址不是代码，可能为分配的内存。");
 
@@ -975,6 +977,7 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 					InfoHandler.AddString("\t0x%08X:\t0x%08X （%s+%X）[访问权限：%s]", 
 						p, dw, Str1.c_str(), Rel1,
 						GetAccessStr(pInfo.hProcess, (LPCVOID)dw).c_str());
+					InfoHandler.AddAddr((DWORD)p, "\t");
 				}
 				else if(!OnlyShowStackFrame)
 				{

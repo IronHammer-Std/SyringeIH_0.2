@@ -263,7 +263,13 @@ DWORD RemoteDatabase::InitializeDaemon(bool FromException)
 	if (Enabled && !IsDaemonMonitorOpen && !HasTimeOut)
 	{
 		if (!DaemonProcessReport())
+		{
 			Dbg->InfoHandler.Flush();
+		}
+		else
+		{
+			PushReportLineToDaemon(Dbg->InfoHandler.CollectAddrToJsonArray().c_str());
+		}
 		StartDaemonMonitor(FromException);
 		return DBG_CONTINUE;
 	}
@@ -464,7 +470,7 @@ void RemoteDatabase::ProcessReceivedMessage(const char* Msg, LONG Error)
 		{
 			auto MethodObj = Request.GetObj().GetObjectItem("Method");
 			auto ArgObj = Request.GetObj().GetObjectItem("Arguments");
-			if (MethodObj.Available() && ArgObj.Available() && MethodObj.IsTypeString() && ArgObj.IsTypeObject())
+			if (MethodObj.Available() && ArgObj.Available() && MethodObj.IsTypeString())
 			{
 				std::string Method = MethodObj.GetString();
 				auto Res = ProcessDebugCommand(Dbg, Method, ArgObj);
@@ -562,6 +568,7 @@ void RemoteDatabase::FlushDaemonReport()
 		~rd;
 		rd->lpReportStringWLen = (DWORD)DaemonReport.size();
 		~rd;
+		//Log::WriteLine(__FUNCTION__ ": 向守护线程推送了新的报告字符串，位于 0x%08X，长度为 %d 字符。", Ptr, DaemonReport.size());
 		ClearDaemonReport();
 	}
 }
