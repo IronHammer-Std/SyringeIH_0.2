@@ -3,6 +3,28 @@
 #include <cstdarg>
 #include "ExtJson.h"
 
+std::vector<std::string> SplitLines(const std::string& Str)
+{
+    std::vector<std::string> Lines;
+    size_t Start = 0;
+    while (true)
+    {
+        size_t End = Str.find('\n', Start);
+        if (End == std::string::npos)
+        {
+            Lines.push_back((Str.substr(Start)));
+            break;
+        }
+        else
+        {
+            Lines.push_back((Str.substr(Start, End - Start)));
+            Start = End + 1;
+        }
+    }
+    return Lines;
+}
+
+
 void ProcessedDumpInfoHandler::AddString(char const* pFormat, ...)
 {
     va_list args;
@@ -40,7 +62,10 @@ void ProcessedDumpInfoHandler::Flush()
             else { // ProcessedDumpInfoEntry_Addr
                 if (!e.Processed.empty())
                 {
-                    Log::WriteLine("%s%s", e.Prefix.c_str(), e.Processed.c_str());
+                    for (auto& L : SplitLines(e.Processed))
+                    {
+                        Log::WriteLine("%s%s", e.Prefix.c_str(), L.c_str());
+                    }
                 }
             }
             }, entry);
