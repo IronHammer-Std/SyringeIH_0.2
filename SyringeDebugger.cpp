@@ -23,6 +23,7 @@ using namespace std;
 #define EXCEPTION_UNKNOWN_ERROR_1 0xE06D7363
 #define STATUS_FAIL_FAST_EXCEPTION 0xC0000409
 #define MS_VC_EXCEPTION 0x406D1388
+#define DOTNET_CLR_NOTICE 0x04242420
 
 std::string UnicodetoANSI(const std::wstring& Unicode)
 {
@@ -882,13 +883,13 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 	InitializeSymbols();
 
 	{
-		Log::WriteLine(__FUNCTION__ ": 异常线程ID = %u", dbgEvent.dwThreadId);
-		Log::WriteLine(__FUNCTION__ ": ExceptionFlags = %08X", rcd.ExceptionFlags);
-		Log::WriteLine(__FUNCTION__ ": 共 %d 个参数", rcd.NumberParameters);
+		InfoHandler.AddString(__FUNCTION__ ": 异常线程ID = %u", dbgEvent.dwThreadId);
+		InfoHandler.AddString(__FUNCTION__ ": ExceptionFlags = %08X", rcd.ExceptionFlags);
+		InfoHandler.AddString(__FUNCTION__ ": 共 %d 个参数", rcd.NumberParameters);
 		for (DWORD i = 0; i < rcd.NumberParameters; ++i)
 		{
 			auto [Rel, Str] = AnalyzeAddr(rcd.ExceptionInformation[i]);
-			Log::WriteLine(__FUNCTION__ ": 参数 %d : 0x%08X（%s+%X）[访问权限：%s]", i, rcd.ExceptionInformation[i], Str.c_str(), Rel, 
+			InfoHandler.AddString(__FUNCTION__ ": 参数 %d : 0x%08X（%s+%X）[访问权限：%s]", i, rcd.ExceptionInformation[i], Str.c_str(), Rel, 
 				GetAccessStr(pInfo.hProcess, (LPCVOID)rcd.ExceptionInformation[i]).c_str());
 		}
 	}
@@ -896,18 +897,18 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 
 
 	auto [Rel, Str] = AnalyzeAddr((DWORD)exceptAddr);
-	Log::WriteLine(
+	InfoHandler.AddString(
 		__FUNCTION__ ": 发生异常，代码: 0x%08X ", exceptCode);
-	Log::WriteLine(
+	InfoHandler.AddString(
 		"(可能原因：%s)", GetExcStr(exceptCode).c_str());
-	Log::WriteLine(
+	InfoHandler.AddString(
 		"地址： 0x%08X（%s+%X）[访问权限：%s]", 
 		exceptAddr, Str.c_str(), Rel, GetAccessStr(pInfo.hProcess, exceptAddr).c_str());
-	if (IsExecutable(pInfo.hProcess, (LPCVOID)exceptAddr))Log::WriteLine("发生异常的地址为可执行的代码。");
-	else Log::WriteLine("发生异常的地址不是代码，可能为分配的内存。");
+	if (IsExecutable(pInfo.hProcess, (LPCVOID)exceptAddr))InfoHandler.AddString("发生异常的地址为可执行的代码。");
+	else InfoHandler.AddString("发生异常的地址不是代码，可能为分配的内存。");
 	if (ExceptionReportAlwaysFull || !bAVLogged)
 	{
-		//Log::WriteLine(__FUNCTION__ ": ACCESS VIOLATION at 0x%08X!", exceptAddr);
+		//InfoHandler.AddString(__FUNCTION__ ": ACCESS VIOLATION at 0x%08X!", exceptAddr);
 		auto const& threadInfo = Threads[dbgEvent.dwThreadId];
 		HANDLE currentThread = threadInfo.Thread;
 
@@ -920,31 +921,31 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 		}
 
 		auto [Rel2, Str2] = AnalyzeAddr((DWORD)AccessAddr);
-		Log::WriteLine("程序试图%s 0x%08X（%s+%X）[访问权限：%s]。",
+		InfoHandler.AddString("程序试图%s 0x%08X（%s+%X）[访问权限：%s]。",
 			access ? access : ("<未知行为：" + std::to_string(dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[0]) + ">").c_str(),
 			AccessAddr, Str2.c_str(), Rel2,
 			GetAccessStr(pInfo.hProcess, (LPCVOID)AccessAddr).c_str());
-		if (IsExecutable(pInfo.hProcess, (LPCVOID)AccessAddr))Log::WriteLine("试图访问的地址为可执行的代码。");
-		else Log::WriteLine("试图访问的地址不是代码，可能为分配的内存。");
+		if (IsExecutable(pInfo.hProcess, (LPCVOID)AccessAddr))InfoHandler.AddString("试图访问的地址为可执行的代码。");
+		else InfoHandler.AddString("试图访问的地址不是代码，可能为分配的内存。");
 
 
 		CONTEXT context;
 		context.ContextFlags = CONTEXT_FULL;
 		GetThreadContext(currentThread, &context);
 
-		Log::WriteLine();
-		Log::WriteLine("寄存器：");
-		Log::WriteLine("\tEAX = 0x%08X\tECX = 0x%08X\tEDX = 0x%08X",
+		InfoHandler.AddString();
+		InfoHandler.AddString("寄存器：");
+		InfoHandler.AddString("\tEAX = 0x%08X\tECX = 0x%08X\tEDX = 0x%08X",
 			context.Eax, context.Ecx, context.Edx);
-		Log::WriteLine("\tEBX = 0x%08X\tESP = 0x%08X\tEBP = 0x%08X",
+		InfoHandler.AddString("\tEBX = 0x%08X\tESP = 0x%08X\tEBP = 0x%08X",
 			context.Ebx, context.Esp, context.Ebp);
-		Log::WriteLine("\tESI = 0x%08X\tEDI = 0x%08X\tEIP = 0x%08X",
+		InfoHandler.AddString("\tESI = 0x%08X\tEDI = 0x%08X\tEIP = 0x%08X",
 			context.Esi, context.Edi, context.Eip);
-		Log::WriteLine();
+		InfoHandler.AddString();
 
 
 
-		Log::WriteLine("\t堆栈转储信息：（按可能的栈帧分段）");
+		InfoHandler.AddString("\t堆栈转储信息：（按可能的栈帧分段）");
 		auto const esp = reinterpret_cast<DWORD*>(context.Esp);
 		auto const eend = LongStackDump ? (DWORD*)0xFFFFFFFF : esp + 0x100;
 		bool PrevHook = false;
@@ -960,24 +961,24 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 					{
 						if (PrevHook)
 						{
-							Log::WriteLine("（钩子地址为%X）", dw);
+							InfoHandler.AddString("（钩子地址为%X）", dw);
 							PrevHook = false;
 						}
 						else if (!OnlyShowStackFrame)
-							Log::WriteLine();
+							InfoHandler.AddString();
 					}
 					else if (OnlyShowStackFrame)
 					{
 						continue;
 					}
 					if (Database.InHookRange(dw))PrevHook = true;
-					Log::WriteLine("\t0x%08X:\t0x%08X （%s+%X）[访问权限：%s]", 
+					InfoHandler.AddString("\t0x%08X:\t0x%08X （%s+%X）[访问权限：%s]", 
 						p, dw, Str1.c_str(), Rel1,
 						GetAccessStr(pInfo.hProcess, (LPCVOID)dw).c_str());
 				}
 				else if(!OnlyShowStackFrame)
 				{
-					Log::WriteLine("\t0x%08X:\t0x%08X", p, dw);
+					InfoHandler.AddString("\t0x%08X:\t0x%08X", p, dw);
 				}
 			}
 			else {
@@ -985,12 +986,12 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 				{
 					break;
 				}
-				Log::WriteLine("\t0x%08X:\t（无法读取）", p);
+				InfoHandler.AddString("\t0x%08X:\t（无法读取）", p);
 			}
 		}
-		Log::WriteLine();
+		InfoHandler.AddString();
 #if 0
-		Log::WriteLine("Making crash dump:\n");
+		InfoHandler.AddString("Making crash dump:\n");
 		MINIDUMP_EXCEPTION_INFORMATION expParam;
 		expParam.ThreadId = dbgEvent.dwThreadId;
 		EXCEPTION_POINTERS ep;
@@ -1017,14 +1018,15 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 		MiniDumpWriteDump(pInfo.hProcess, dbgEvent.dwProcessId, dumpFile, type, &expParam, nullptr, nullptr);
 		CloseHandle(dumpFile);
 
-		Log::WriteLine("Crash dump generated.\n");
+		InfoHandler.AddString("Crash dump generated.\n");
 #endif
 
 		bAVLogged = true;
 		if (InfiniteWaitForDebug)
 		{	
-			Log::WriteLine("Syringe正在等待调试……");
+			InfoHandler.AddString("Syringe正在等待调试……");
 			Log::Flush();
+			InfoHandler.Flush();
 			MessageBoxW(NULL, L"Syringe遇到了异常。点击确定以继续运行程序。", VersionLString, MB_OK);
 		}
 	}
@@ -1332,7 +1334,7 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_BREAKPOINT");
 		return Handle_BreakPoint(dbgEvent);
 	}
-	else if(exceptCode == EXCEPTION_SINGLE_STEP)
+	else if (exceptCode == EXCEPTION_SINGLE_STEP)
 	{
 		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_SINGLE_STEP");
 		auto const buffer = INT3;
@@ -1380,6 +1382,13 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 		//TODO： 标记线程的名称
 		return DBG_CONTINUE;
 	}
+	else if (exceptCode == DOTNET_CLR_NOTICE)
+	{
+		Log::WriteLine(__FUNCTION__ ": 收到来自.NET CLR的调试通知，线程ID %u，地址 0x%08X",
+			dbgEvent.dwThreadId,
+			dbgEvent.u.Exception.ExceptionRecord.ExceptionAddress);
+		return DBG_CONTINUE;
+	}
 	else
 	{
 		return StackDumpInteraction(dbgEvent, true);
@@ -1397,11 +1406,15 @@ DWORD SyringeDebugger::StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool Fr
 	if (!Continuable)
 	{
 		Log::WriteLine(__FUNCTION__ ": 无法处理错误，程序不可继续运行。");
+		InfoHandler.Flush();
 		return DBG_EXCEPTION_NOT_HANDLED;
 	}
 
-	if(Skipped)
+	if (Skipped)
+	{
+		InfoHandler.Flush();
 		return DBG_EXCEPTION_NOT_HANDLED;
+	}
 
 	Log::WriteLine(__FUNCTION__ ": 守护线程ID %u",  Database.GetDaemonThreadID());
 	return Database.InitializeDaemon(FromException);

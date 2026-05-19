@@ -355,6 +355,7 @@ public:
 	void GenerateAbsAddrList();
 
 	bool EnableDaemon();
+	bool DaemonProcessReport();
 	void EnterDaemonLoop();
 	void PushReportLineToDaemon(const wchar_t* Line);
 	void ClearDaemonReport();

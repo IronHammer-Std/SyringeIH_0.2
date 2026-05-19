@@ -7,12 +7,14 @@ using DebugCommandMethodFunction = DebugCommandReturnType(*)(SyringeDebugger* Db
 DebugCommandReturnType ProcessDebugCommand_GetVersion(SyringeDebugger* Dbg, JsonObject Arguments);
 DebugCommandReturnType ProcessDebugCommand_GetAccessStr(SyringeDebugger* Dbg, JsonObject Arguments);
 DebugCommandReturnType ProcessDebugCommand_AnalyzeAddr(SyringeDebugger* Dbg, JsonObject Arguments);
+DebugCommandReturnType ProcessDebugCommand_FlushDumpInfo(SyringeDebugger* Dbg, JsonObject Arguments);
 
 std::unordered_map<std::string, DebugCommandMethodFunction> DebugCommandMethodMap
 {
 	{"GetVersion", ProcessDebugCommand_GetVersion},
 	{"GetAccessStr", ProcessDebugCommand_GetAccessStr},
 	{"AnalyzeAddr", ProcessDebugCommand_AnalyzeAddr},
+	{"FlushDumpInfo", ProcessDebugCommand_FlushDumpInfo}
 	// {"ListModules", ProcessDebugCommand_ListModules},
 	// {"ReadMemory", ProcessDebugCommand_ReadMemory},
 	// {"WriteMemory", ProcessDebugCommand_WriteMemory},
@@ -100,5 +102,15 @@ DebugCommandReturnType ProcessDebugCommand_AnalyzeAddr(SyringeDebugger* Dbg, Jso
 	auto Obj = F.GetObj();
 	Obj.AddString("Source", ANSItoUTF8(S));
 	Obj.AddInt("Offset", Addr);
+	return F;
+}
+
+DebugCommandReturnType ProcessDebugCommand_FlushDumpInfo(SyringeDebugger* Dbg, JsonObject Arguments)
+{
+	((void)Dbg);
+	((void)Arguments);
+	Dbg->InfoHandler.Flush();
+	JsonFile F;
+	F.GetObj().SetNull();
 	return F;
 }

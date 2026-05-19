@@ -7,7 +7,7 @@
 #include "FindFile.h"
 #include "HookAnalyzer.h"
 #include "RemoteDatabase.h"
-#include "ProcessedDumpInfoHandler.h"
+#include "ProcessedDumpInfo.h"
 
 #include <cstring>
 #include <iostream>

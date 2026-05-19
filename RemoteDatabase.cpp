@@ -262,6 +262,8 @@ DWORD RemoteDatabase::InitializeDaemon(bool FromException)
 	auto Enabled = EnableDaemon();
 	if (Enabled && !IsDaemonMonitorOpen && !HasTimeOut)
 	{
+		if (!DaemonProcessReport())
+			Dbg->InfoHandler.Flush();
 		StartDaemonMonitor(FromException);
 		return DBG_CONTINUE;
 	}
@@ -269,6 +271,7 @@ DWORD RemoteDatabase::InitializeDaemon(bool FromException)
 	{
 		if (!Enabled)Log::WriteLine(__FUNCTION__ ": 调试交互未启用。");
 		else if(HasTimeOut)Log::WriteLine(__FUNCTION__ ": 调试交互已断开。");
+		Dbg->InfoHandler.Flush();
 		return DBG_EXCEPTION_NOT_HANDLED;
 	}
 }
@@ -278,6 +281,14 @@ bool RemoteDatabase::EnableDaemon()
 	RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
 	const auto& DaemonData = *rd;
 	auto Enabled = DaemonData.EnableDaemon;
+	return Enabled;
+}
+
+bool RemoteDatabase::DaemonProcessReport()
+{
+	RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
+	const auto& DaemonData = *rd;
+	auto Enabled = DaemonData.ProcessReport;
 	return Enabled;
 }
 

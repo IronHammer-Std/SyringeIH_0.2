@@ -27,7 +27,14 @@ void ProcessedDumpInfoHandler::Flush()
     for (const auto& entry : Entries) {
         std::visit([](const auto& e) {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, ProcessedDumpInfoEntry_String>) {
-                Log::WriteLine("%s", e.Info.c_str());
+                if (!e.Info.empty())
+                {
+                    Log::WriteLine("%s", e.Info.c_str());
+                }
+                else
+                {
+                    Log::WriteLine();
+                }
             }
             else { // ProcessedDumpInfoEntry_Addr
                 if (!e.Processed.empty())
@@ -37,6 +44,7 @@ void ProcessedDumpInfoHandler::Flush()
             }
             }, entry);
     }
+    Entries.clear();
 }
 
 void ProcessedDumpInfoHandler::Fillin(const std::vector<std::string> DescStr)

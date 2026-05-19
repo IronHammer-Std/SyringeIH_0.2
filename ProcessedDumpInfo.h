@@ -23,6 +23,11 @@ struct ProcessedDumpInfoHandler
 	std::vector<ProcessedDumpInfoEntry> Entries;
 
 public:
+	void AddString()
+	{
+		Entries.emplace_back(ProcessedDumpInfoEntry_String{ "" });
+	}
+
 	void AddString(const std::string& Info)
 	{
 		Entries.emplace_back(ProcessedDumpInfoEntry_String{ Info });
