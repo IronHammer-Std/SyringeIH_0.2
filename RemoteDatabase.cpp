@@ -315,6 +315,7 @@ void RemoteDatabase::EnterDaemonLoop()
 	FinishDaemonWork();
 	CloseDaemonPipe();
 	Log::WriteLine(__FUNCTION__ ": 离开守护线程交互循环。");
+	Dbg->InfoHandler.Flush();
 }
 
 void RemoteDatabase::InitPipeName()
