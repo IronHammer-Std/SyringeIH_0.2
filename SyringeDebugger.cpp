@@ -1584,7 +1584,8 @@ void SyringeDebugger::Run(std::string_view const arguments)
 			exit_code = dbgEvent.u.ExitProcess.dwExitCode;
 			//let it go until the debuggee no longer exists
 			break;
-		} else if(dbgEvent.dwDebugEventCode == RIP_EVENT) {
+		} 
+		else if(dbgEvent.dwDebugEventCode == RIP_EVENT) {
 			//let it go until the debuggee no longer exists
 			break;
 		}
@@ -1600,6 +1601,13 @@ void SyringeDebugger::Run(std::string_view const arguments)
 			Log::WriteLine(__FUNCTION__ ": Syringe将分离并结束运行，已注入的代码将保留。");
 			Log::WriteLine();
 			return;
+		}
+
+		if (PreTerminateFromDaemon)
+		{
+			while (!TerminateFromDaemon)Sleep(0);
+			TerminateProcess(pInfo.hProcess, 0);
+			continue;
 		}
 	}
 

@@ -311,11 +311,13 @@ void RemoteDatabase::EnterDaemonLoop()
 		FinishDaemonLoop = false;
 		while (!FinishDaemonLoop)
 			DaemonCommLoop();
+		Dbg->PreTerminateFromDaemon = true;
 	}
 	FinishDaemonWork();
 	CloseDaemonPipe();
 	Log::WriteLine(__FUNCTION__ ": 离开守护线程交互循环。");
 	Dbg->InfoHandler.Flush();
+	Dbg->TerminateFromDaemon = true;
 }
 
 void RemoteDatabase::InitPipeName()

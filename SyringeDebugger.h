@@ -136,6 +136,8 @@ public:
 	DWORD InfiniteLoop { 0 };
 	bool EverythingIsOK{ false };
 	bool PrepareForDetach{ false };
+	bool TerminateFromDaemon{ false };
+	bool PreTerminateFromDaemon{ false };
 	std::string SyringeExPath{ };
 	std::set<std::pair<DWORD, LPVOID>> StackDumpProcessedAddress{ };
 
