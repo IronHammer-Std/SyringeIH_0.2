@@ -1429,6 +1429,28 @@ void SyringeDebugger::FinalizeErrorThread(DEBUG_EVENT const& dbgEvent)
 	CONTEXT context;
 	context.ContextFlags = CONTEXT_CONTROL;
 	GetThreadContext(Threads[ErrorThread].Thread, &context);
+
+	const size_t StackSize = 0x10000;
+	VirtualMemoryHandle newStack = AllocMem(nullptr, StackSize);
+	if (newStack) {
+		DWORD newEsp = (DWORD)newStack.get() + StackSize - 4; // 栈顶留一点空间
+		context.Esp = newEsp;
+		context.Ebp = 0;
+	}
+	else {
+		// 若分配失败，退路为将 ESP 设置为当前栈的安全区域（保守方案）
+		// 至少保证 Sleep 调用有可读写的栈
+		context.Esp = (context.Esp & 0xFFFFF000) + 0xFF0; // 对齐到页边界附近
+	}
+
+	context.EFlags &= ~0x100; // 清除 TF (Trap Flag)
+	context.Eax = 0;
+	context.Ebx = 0;
+	context.Ecx = 0;
+	context.Edx = 0;
+	context.Esi = 0;
+	context.Edi = 0;
+	
 	context.Eip = InfiniteLoop;
 	context.ContextFlags = CONTEXT_CONTROL;
 	SetThreadContext(Threads[ErrorThread].Thread, &context);
