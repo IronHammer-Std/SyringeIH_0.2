@@ -45,5 +45,7 @@ public:
 
 	void Fillin(const std::vector<std::string> DescStr);
 
+	void Clear();
+
 	std::wstring CollectAddrToJsonArray();
 };

@@ -108,12 +108,16 @@ DebugCommandReturnType ProcessDebugCommand_AnalyzeAddr(SyringeDebugger* Dbg, Jso
 DebugCommandReturnType ProcessDebugCommand_FlushDumpInfo(SyringeDebugger* Dbg, JsonObject Arguments)
 {
 	((void)Dbg);
+	auto& Handler = InfoHandlerToFlush.front();
 	if (Arguments.Available() && Arguments.IsTypeArray())
 	{
-		Dbg->InfoHandler.Fillin(Arguments.GetArrayString());
+		Handler.Fillin(Arguments.GetArrayString());
 	}
-	Dbg->InfoHandler.Flush();
+	Handler.Flush();
+	InfoHandlerToFlush.pop();
 	JsonFile F;
 	F.GetObj().SetNull();
 	return F;
 }
+
+std::queue<ProcessedDumpInfoHandler> InfoHandlerToFlush;

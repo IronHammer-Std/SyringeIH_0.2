@@ -16,6 +16,7 @@ extern BYTE hook_code_call[40];
 extern BYTE hook_jmp_back[5];
 extern BYTE hook_jmp[5];
 
+bool DaemonPrepared = false;
 
 DWORD QuickHashCStr(const char* str)
 {
@@ -243,6 +244,8 @@ void RemoteDatabase::StartDaemonMonitor(bool FromException)
 
 	auto DaemonID = GetDaemonThreadID();
 	InitPipeName();
+	InfoHandlerToFlush.push(Dbg->InfoHandler);
+	Dbg->InfoHandler.Clear();
 	std::thread DaemonMonitor(
 		[this, DaemonID]()
 		{
@@ -252,7 +255,7 @@ void RemoteDatabase::StartDaemonMonitor(bool FromException)
 		}
 	);
 
-
+	while (!DaemonPrepared)Sleep(0);
 
 	DaemonMonitor.detach();
 }
@@ -300,12 +303,17 @@ bool RemoteDatabase::DaemonProcessReport()
 
 void RemoteDatabase::EnterDaemonLoop()
 {
-	if (!EnableDaemon())return;
+	if (!EnableDaemon())
+	{
+		DaemonPrepared = true;
+		return;
+	}
 
 	Log::WriteLine(__FUNCTION__ ": 进入守护线程交互循环。");
 	FlushDaemonReport();
 	OpenDaemonPipe();
 	StartDaemonWork();
+	DaemonPrepared = true;
 	if (WaitForDaemonConnect())
 	{
 		FinishDaemonLoop = false;
@@ -416,6 +424,7 @@ void RemoteDatabase::DaemonCommLoop()
 	if (!ReadFile(DaemonPipe, DaemonCommBuffer.data(), DaemonCommBuffer.size(), &bytesRead, NULL)) 
 	{
 		DWORD error = GetLastError();
+		Log::WriteLine(__FUNCTION__ ": ReadFile 失败， GetLastError() : %u", error);
 		if (error == ERROR_BROKEN_PIPE) {
 			FinishDaemonLoop = true;
 			return;
