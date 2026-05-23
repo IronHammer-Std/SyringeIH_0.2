@@ -1404,7 +1404,10 @@ DWORD SyringeDebugger::StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool Fr
 {
 	bool Skipped = false;
 	auto Continuable = Handle_StackDump(dbgEvent, Skipped);
-	//FinalizeErrorThread(dbgEvent);
+	if (AutoTerminate)
+	{
+		FinalizeErrorThread(dbgEvent);
+	}
 
 	if (!Continuable)
 	{
@@ -1628,8 +1631,11 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		if (PreTerminateFromDaemon)
 		{
 			while (!TerminateFromDaemon)Sleep(0);
-			//Log::WriteLine(__FUNCTION__ ": 守护线程已终止，即将终止整个进程……");
-			//TerminateProcess(pInfo.hProcess, 0);
+			if (AutoTerminate)
+			{
+				Log::WriteLine(__FUNCTION__ ": 守护线程已终止，即将终止整个进程……");
+				TerminateProcess(pInfo.hProcess, 0);
+			}
 			continue;
 		}
 	}

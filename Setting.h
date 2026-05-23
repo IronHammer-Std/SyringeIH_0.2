@@ -40,6 +40,8 @@ extern bool CheckBreakpoint;
 extern bool AnalyzeCPPException;
 extern bool OverwriteStartParams;
 extern bool ShowHookConflictPopup;
+extern bool AutoTerminate;
+extern bool LogDaemonInteraction;
 extern std::set<HookIdx> GlobalDisableHooks;
 extern std::set<HookIdx> GlobalEnableHooks;
 
@@ -49,6 +51,6 @@ extern std::string DefaultExtPack;
 extern std::string DefaultExecName;
 extern std::string DefaultCmdLine;
 
-extern bool LogDaemonInteraction;
+
 
 #include "Version.h"

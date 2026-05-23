@@ -24,6 +24,8 @@ bool CheckBreakpoint = false;
 bool AnalyzeCPPException = true;
 bool OverwriteStartParams = false;
 bool ShowHookConflictPopup = false;
+bool LogDaemonInteraction = false;
+bool AutoTerminate = false;
 
 std::unordered_map<std::string, ExtensionPack> ExtPacks;
 std::string DefaultExtPack;
@@ -31,7 +33,7 @@ std::string DefaultExtPack;
 std::set<HookIdx> GlobalDisableHooks;
 std::set<HookIdx> GlobalEnableHooks;
 
-bool LogDaemonInteraction = false;
+
 
 std::string GetStringFromFile(const char* FileName)
 {
@@ -277,6 +279,18 @@ void ReadSetting()
         ShowHookConflictPopup = SObj.GetBool();
         Log::WriteLine("ShowHookConflictPopup = %s", CStrBoolImpl(ShowHookConflictPopup, StrBoolType::Str_true_false));
     }
+	SObj = Obj.GetObjectItem("AutoTerminate");
+    if (SObj.Available() && SObj.IsTypeBool())
+    {
+        AutoTerminate = SObj.GetBool();
+		Log::WriteLine("AutoTerminate = %s", CStrBoolImpl(AutoTerminate, StrBoolType::Str_true_false));
+    }
+	SObj = Obj.GetObjectItem("LogDaemonInteraction");
+    if (SObj.Available() && SObj.IsTypeBool())
+    {
+        LogDaemonInteraction = SObj.GetBool();
+        Log::WriteLine("LogDaemonInteraction = %s", CStrBoolImpl(LogDaemonInteraction, StrBoolType::Str_true_false));
+	}
     SObj = Obj.GetObjectItem("ExtensionPacks");
     if (SObj.Available() && SObj.IsTypeObject())
     {
@@ -370,6 +384,9 @@ else if (v._Starts_with("-" #f "="))\
         UpdateBoolImpl(GenerateINJ)
         UpdateBoolImpl(AnalyzeCPPException)
 		UpdateBoolImpl(OverwriteStartParams)
+        UpdateBoolImpl(ShowHookConflictPopup)
+		UpdateBoolImpl(AutoTerminate)
+		UpdateBoolImpl(LogDaemonInteraction)
         else
         {
             Log::WriteLine("未知选项 \"%.*s\"", printable(v));
