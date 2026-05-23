@@ -13,11 +13,11 @@ DWORD __cdecl Output(int* R)
 	return 0;
 }
 
-void InfiniteLoop()
+__declspec(naked) void InfiniteLoop()
 {
-	while (true)
-	{
-		Sleep(1000);
+	__asm {
+	_loop:
+		jmp _loop
 	}
 }
 
