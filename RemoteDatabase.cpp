@@ -321,6 +321,7 @@ void RemoteDatabase::EnterDaemonLoop()
 			DaemonCommLoop();
 		void FlushRestDumpInfo();
 		FlushRestDumpInfo();
+		Dbg->InfoHandler.Flush();
 		Dbg->PreTerminateFromDaemon = true;
 	}
 	FinishDaemonWork();
