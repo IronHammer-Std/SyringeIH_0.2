@@ -121,3 +121,12 @@ DebugCommandReturnType ProcessDebugCommand_FlushDumpInfo(SyringeDebugger* Dbg, J
 }
 
 std::queue<ProcessedDumpInfoHandler> InfoHandlerToFlush;
+
+void FlushRestDumpInfo()
+{
+	while (!InfoHandlerToFlush.empty())
+	{
+		InfoHandlerToFlush.front().Flush();
+		InfoHandlerToFlush.pop();
+	}
+}

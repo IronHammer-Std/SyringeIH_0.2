@@ -319,6 +319,8 @@ void RemoteDatabase::EnterDaemonLoop()
 		FinishDaemonLoop = false;
 		while (!FinishDaemonLoop)
 			DaemonCommLoop();
+		void FlushRestDumpInfo();
+		FlushRestDumpInfo();
 		Dbg->PreTerminateFromDaemon = true;
 	}
 	FinishDaemonWork();
@@ -424,11 +426,11 @@ void RemoteDatabase::DaemonCommLoop()
 	if (!ReadFile(DaemonPipe, DaemonCommBuffer.data(), DaemonCommBuffer.size(), &bytesRead, NULL)) 
 	{
 		DWORD error = GetLastError();
-		Log::WriteLine(__FUNCTION__ ": ReadFile 失败， GetLastError() : %u", error);
 		if (error == ERROR_BROKEN_PIPE) {
 			FinishDaemonLoop = true;
 			return;
 		}
+		Log::WriteLine(__FUNCTION__ ": ReadFile 失败， GetLastError() : %u", error);
 		ProcessReceivedMessage("无法读取指令信息。", error);
 		return;
 	}
