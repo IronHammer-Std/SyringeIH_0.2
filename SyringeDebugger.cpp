@@ -1228,7 +1228,8 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 			auto const& hook = *loop_LoadLibrary;
 			ReadMem(&GetData()->ProcAddress, &hook->proc_address, 4);
 
-			if (!hook->proc_address) {
+			if (!IgnoreInvalidHookLibs.count(hook->lib) && !hook->proc_address)
+			{
 				Log::WriteLine(
 					__FUNCTION__ ": 不能在 %s 库中找到函数"
 					" %s", hook->lib, hook->proc);

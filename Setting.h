@@ -1,8 +1,10 @@
 ﻿#pragma once
 #include <string>
 #include <vector>
+#include <unordered_set>
 #include "ExtFunc.h"
 #include "ExtPack.h"
+#include "Handle.h"
 
 class JsonFile;
 
@@ -44,6 +46,7 @@ extern bool AutoTerminate;
 extern bool LogDaemonInteraction;
 extern std::set<HookIdx> GlobalDisableHooks;
 extern std::set<HookIdx> GlobalEnableHooks;
+extern std::unordered_set<std::string, UpperHash, UpperEqualPred> IgnoreInvalidHookLibs;
 
 extern std::unordered_map<std::string, ExtensionPack> ExtPacks;
 extern std::string DefaultExtPack;

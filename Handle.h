@@ -1,12 +1,30 @@
-#pragma once
+﻿#pragma once
 
 #define WIN32_LEAN_AND_MEAN
 //      WIN32_FAT_AND_STUPID
 
 #include <utility>
-
+#include <string>
 #include <stdio.h>
 #include <Windows.h>
+
+DWORD QuickHashCStrUpper(const char* str);
+
+struct UpperHash
+{
+	inline size_t operator()(const std::string& s) const
+	{
+		return QuickHashCStrUpper(s.c_str());
+	}
+};
+
+struct UpperEqualPred
+{
+	inline bool operator ()(const std::string& s1, const std::string& s2) const
+	{
+		return QuickHashCStrUpper(s1.c_str()) == QuickHashCStrUpper(s2.c_str());
+	}
+};
 
 template<typename T>
 struct HandleTraits {

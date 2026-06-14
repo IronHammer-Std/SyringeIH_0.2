@@ -32,7 +32,7 @@ std::string DefaultExtPack;
 
 std::set<HookIdx> GlobalDisableHooks;
 std::set<HookIdx> GlobalEnableHooks;
-
+std::unordered_set<std::string, UpperHash, UpperEqualPred> IgnoreInvalidHookLibs;
 
 
 std::string GetStringFromFile(const char* FileName)
@@ -195,12 +195,15 @@ void ReadSetting()
         DefaultCmdLine = SObj.GetString();
         Log::WriteLine("DefaultCommandLine = \"%s\"", DefaultCmdLine.c_str());
     }
-    //SObj = Obj.GetObjectItem("IsRunningYR");
-    //if (SObj.Available() && SObj.IsTypeBool())
-    //{
-    //    RunningYR = SObj.GetBool();
-    //    Log::WriteLine("IsRunningYR = \"%s\"", CStrBoolImpl(RunningYR, StrBoolType::Str_true_false));
-    //}
+    SObj = Obj.GetObjectItem("IgnoreInvalidHookLibs");
+    if (SObj.Available() && SObj.IsTypeArray())
+    {
+		auto arr = SObj.GetArrayString();
+		IgnoreInvalidHookLibs.insert(arr.begin(), arr.end());
+		Log::WriteLine("IgnoreInvalidHookLibs : ");
+        for (auto& s : IgnoreInvalidHookLibs)
+            Log::WriteLine("\t%s", s.c_str());
+    }
     SObj = Obj.GetObjectItem("LongStackDump");
     if (SObj.Available() && SObj.IsTypeBool())
     {
