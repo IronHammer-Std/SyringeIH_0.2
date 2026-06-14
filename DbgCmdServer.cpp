@@ -10,6 +10,7 @@ DebugCommandReturnType ProcessDebugCommand_AnalyzeAddr(SyringeDebugger* Dbg, Jso
 DebugCommandReturnType ProcessDebugCommand_FlushDumpInfo(SyringeDebugger* Dbg, JsonObject Arguments);
 DebugCommandReturnType ProcessDebugCommand_GetExceptionStr(SyringeDebugger* Dbg, JsonObject Arguments);
 DebugCommandReturnType ProcessDebugCommand_HelpAccess(SyringeDebugger* Dbg, JsonObject Arguments);
+DebugCommandReturnType ProcessDebugCommand_HasCommand(SyringeDebugger* Dbg, JsonObject Arguments);
 
 std::unordered_map<std::string, DebugCommandMethodFunction> DebugCommandMethodMap
 {
@@ -19,6 +20,7 @@ std::unordered_map<std::string, DebugCommandMethodFunction> DebugCommandMethodMa
 	{"FlushDumpInfo", ProcessDebugCommand_FlushDumpInfo},
 	{"GetExceptionStr", ProcessDebugCommand_GetExceptionStr},
 	{"HelpAccess", ProcessDebugCommand_HelpAccess},
+	{"HasCommand", ProcessDebugCommand_HasCommand},
 	// {"ListModules", ProcessDebugCommand_ListModules},
 	// {"ReadMemory", ProcessDebugCommand_ReadMemory},
 	// {"WriteMemory", ProcessDebugCommand_WriteMemory},
@@ -43,10 +45,63 @@ std::unordered_map<std::string, DebugCommandMethodFunction> DebugCommandMethodMa
 };
 std::unordered_map<std::string, std::string> DebugCommandHelpMap
 {
-	{"", (const char*)u8""}
+	{"GetVersion", (const char*)
+u8R"(获取Syringe调试器的版本信息。
+参数：无
+返回值：包含版本号和构建日期的JSON对象
+)"},{"GetAccessStr", (const char*)
+u8R"(获取指定内存地址的访问权限描述字符串。
+参数：
+- Address: 要查询的内存地址（整数）
+返回值：包含访问权限描述字符串的JSON对象
+)"},{"AnalyzeAddr", (const char*)
+u8R"(分析指定的内存地址，获取所在的模块来源和偏移量。
+参数：
+- Address: 要分析的内存地址（整数）
+返回值：包含Source（来源描述字符串）和Offset（偏移量整数）的JSON对象
+)"},{"FlushDumpInfo", (const char*)
+u8R"(注意：此命令服务于地址注解功能，不应该从控制台直接调用。
+填充并刷新当前的Dump信息。
+参数：包含额外转储数据的字符串数组（可选）
+返回值：Null
+)"},{"GetExceptionStr", (const char*)
+u8R"(获取指定异常代码的描述字符串。
+参数：
+- ExceptionCode: 异常代码（整数）
+返回值：包含异常描述字符串的JSON对象
+)"},{"HelpAccess", (const char*)
+u8R"(注意：此命令服务于Help指令，不应该从控制台直接调用。
+获取调试命令的帮助说明或库的元数据信息。
+参数（提供其一）：
+- Command: 要获取帮助的命令名称（字符串）
+- Info: 查询特定信息（"Basic" / "Setting" / "Hooks"）
+返回值：取决于请求参数的JSON对象或字符串
+)"},{"HasCommand", (const char*)
+u8R"(检查当前调试器是否支持执行某个特定命令。
+参数：
+- Command: 要检查的命令名称（字符串）
+返回值：表示是否包含该命令的布尔值
+)"},
 };
 
 std::string ANSItoUTF8(const std::string& ANSI);
+std::string UnicodetoUTF8(const std::wstring& Unicode);
+
+std::string FormatMessageU8(DWORD ErrorValue)
+{
+	wchar_t Buffer[1024];
+	DWORD Result = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+		NULL, ErrorValue, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), Buffer, 1024, NULL);
+	if (Result == 0)
+	{
+		return "Unknown error";
+	}
+	return UnicodetoUTF8(Buffer);
+}
+std::pair<std::string, LONG> FormatError(DWORD ErrorValue)
+{
+	return std::make_pair(FormatMessageU8(ErrorValue), (LONG)ErrorValue);
+}
 
 DebugCommandReturnType
 ProcessDebugCommand(
@@ -63,11 +118,7 @@ ProcessDebugCommand(
 	}
 	else
 	{
-		JsonFile F;
-		auto Obj = F.GetObj();
-		Obj.AddObjectItem("-Arguments-", Arguments, true);
-		Obj.AddString("-Method-", Method);
-		return F;
+		return FormatError(ERROR_INVALID_FUNCTION);
 	}
 }
 
@@ -168,7 +219,7 @@ DebugCommandReturnType ProcessDebugCommand_HelpAccess(SyringeDebugger* Dbg, Json
 		}
 		else
 		{
-			Obj.SetNull();
+			return FormatError(ERROR_INVALID_INDEX);
 		}
 		return F;
 	}
@@ -204,18 +255,31 @@ DebugCommandReturnType ProcessDebugCommand_HelpAccess(SyringeDebugger* Dbg, Json
 		}
 		else
 		{
-			Obj.SetNull();
-			return F;
+			return FormatError(ERROR_INVALID_INDEX);
 		}
 	}
 	else
 	{
-		Obj.SetNull();
-		return F;
+		return FormatError(ERROR_BAD_ARGUMENTS);
 	}
 }
 
-
+DebugCommandReturnType ProcessDebugCommand_HasCommand(SyringeDebugger* Dbg, JsonObject Arguments)
+{
+	((void)Dbg);
+	JsonFile F;
+	auto oCommand = Arguments.GetObjectItem("Command");
+	if (oCommand.Available() && oCommand.IsTypeString())
+	{
+		auto CmdName = oCommand.GetString();
+		F.GetObj().SetBool(DebugCommandMethodMap.count(CmdName) > 0);
+	}
+	else
+	{
+		return FormatError(ERROR_BAD_ARGUMENTS);
+	}
+	return F;
+}
 
 
 std::queue<ProcessedDumpInfoHandler> InfoHandlerToFlush;
