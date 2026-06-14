@@ -577,9 +577,16 @@ void RemoteDatabase::FlushDaemonReport()
 	}
 	else
 	{
-		VirtualMemoryHandle NewRptString{ Dbg->AllocMem(nullptr, DaemonReport.size() * sizeof(wchar_t)) };
+		auto DaemonReportBytes = DaemonReport.size() * sizeof(wchar_t);
+		VirtualMemoryHandle NewRptString{ Dbg->AllocMem(nullptr, DaemonReportBytes + sizeof(wchar_t)) };
 		auto Ptr = NewRptString.get();
-		Dbg->PatchMem(Ptr, DaemonReport.c_str(), DaemonReport.size() * sizeof(wchar_t));
+		if(!Ptr)
+		{
+			Log::WriteLine(__FUNCTION__ ": 无法为守护线程报告分配内存。");
+			return;
+		}
+		Dbg->PatchMem(Ptr, DaemonReport.c_str(), DaemonReportBytes);
+		Dbg->PatchMem(Ptr + DaemonReportBytes, L"\0", sizeof(wchar_t)); // Null-terminate the string
 		DaemonReportRemote.swap(NewRptString);
 		RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
 		rd->lpReportStringW = (DWORD)Ptr;
