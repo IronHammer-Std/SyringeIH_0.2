@@ -319,11 +319,11 @@ void RemoteDatabase::EnterDaemonLoop()
 		FinishDaemonLoop = false;
 		while (!FinishDaemonLoop)
 			DaemonCommLoop();
-		void FlushRestDumpInfo();
-		FlushRestDumpInfo();
-		Dbg->InfoHandler.Flush();
 		Dbg->PreTerminateFromDaemon = true;
 	}
+	void FlushRestDumpInfo();
+	FlushRestDumpInfo();
+	Dbg->InfoHandler.Flush();
 	FinishDaemonWork();
 	CloseDaemonPipe();
 	Log::WriteLine(__FUNCTION__ ": 离开守护线程交互循环。");
