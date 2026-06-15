@@ -53,12 +53,12 @@ bool WritePipeRecordToFile(bool NewPipeFormat, HANDLE hFile, LPCVOID lpBuffer, D
 {
 	if (NewPipeFormat)
 	{
-		Log::WriteLine(__FUNCTION__ ": 使用新管道格式写入数据，大小 %u 字节。", nNumberOfBytesToWrite);
+		//Log::WriteLine(__FUNCTION__ ": 使用新管道格式写入数据，大小 %u 字节。", nNumberOfBytesToWrite);
 		return WritePipeRecordToFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten);
 	}
 	else
 	{
-		Log::WriteLine(__FUNCTION__ ": 使用旧管道格式写入数据，大小 %u 字节。", nNumberOfBytesToWrite);
+		//Log::WriteLine(__FUNCTION__ ": 使用旧管道格式写入数据，大小 %u 字节。", nNumberOfBytesToWrite);
 		return WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, NULL);
 	}
 }
@@ -68,12 +68,12 @@ bool ReadPipeRecordFromFile(bool NewPipeFormat, HANDLE hFile, std::vector<BYTE>&
 	const size_t PipeBufferSize = 32768;// 32KB
 	if (NewPipeFormat)
 	{
-		Log::WriteLine(__FUNCTION__ ": 使用新管道格式读取数据。");
+		//Log::WriteLine(__FUNCTION__ ": 使用新管道格式读取数据。");
 		return ReadPipeRecordFromFile(hFile, Buffer, lpNumberOfBytesRead);
 	}
 	else
 	{
-		Log::WriteLine(__FUNCTION__ ": 使用旧管道格式读取数据。");
+		//Log::WriteLine(__FUNCTION__ ": 使用旧管道格式读取数据。");
 		Buffer.resize(PipeBufferSize);
 		DWORD dwRead = 0;
 		if (!ReadFile(hFile, Buffer.data(), (DWORD)Buffer.size(), &dwRead, NULL))
