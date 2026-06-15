@@ -11,6 +11,7 @@ DebugCommandReturnType ProcessDebugCommand_FlushDumpInfo(SyringeDebugger* Dbg, J
 DebugCommandReturnType ProcessDebugCommand_GetExceptionStr(SyringeDebugger* Dbg, JsonObject Arguments);
 DebugCommandReturnType ProcessDebugCommand_HelpAccess(SyringeDebugger* Dbg, JsonObject Arguments);
 DebugCommandReturnType ProcessDebugCommand_HasCommand(SyringeDebugger* Dbg, JsonObject Arguments);
+DebugCommandReturnType ProcessDebugCommand_LogLine(SyringeDebugger* Dbg, JsonObject Arguments);
 
 std::unordered_map<std::string, DebugCommandMethodFunction> DebugCommandMethodMap
 {
@@ -21,6 +22,7 @@ std::unordered_map<std::string, DebugCommandMethodFunction> DebugCommandMethodMa
 	{"GetExceptionStr", ProcessDebugCommand_GetExceptionStr},
 	{"HelpAccess", ProcessDebugCommand_HelpAccess},
 	{"HasCommand", ProcessDebugCommand_HasCommand},
+	{"LogLine", ProcessDebugCommand_LogLine}, 
 	// {"ListModules", ProcessDebugCommand_ListModules},
 	// {"ReadMemory", ProcessDebugCommand_ReadMemory},
 	// {"WriteMemory", ProcessDebugCommand_WriteMemory},
@@ -281,6 +283,23 @@ DebugCommandReturnType ProcessDebugCommand_HasCommand(SyringeDebugger* Dbg, Json
 	return F;
 }
 
+DebugCommandReturnType ProcessDebugCommand_LogLine(SyringeDebugger* Dbg, JsonObject Arguments)
+{
+	((void)Dbg);
+	auto oLine = Arguments.GetObjectItem("Line");
+	if (oLine.Available() && oLine.IsTypeString())
+	{
+		auto Line = oLine.GetString();
+		Log::WriteLine("%s", Line.c_str());
+	}
+	else
+	{
+		return FormatError(ERROR_BAD_ARGUMENTS);
+	}
+	JsonFile F;
+	F.GetObj().SetNull();
+	return F;
+}
 
 std::queue<ProcessedDumpInfoHandler> InfoHandlerToFlush;
 
