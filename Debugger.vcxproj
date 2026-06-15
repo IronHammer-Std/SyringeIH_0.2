@@ -160,6 +160,7 @@
     <ClCompile Include="HookAnalyzer.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="Main.cpp" />
+    <ClCompile Include="PipeRecord.cpp" />
     <ClCompile Include="PortableExecutable.cpp" />
     <ClCompile Include="ProcessedDumpInfo.cpp" />
     <ClCompile Include="RemoteDatabase.cpp" />
@@ -178,6 +179,7 @@
     <ClInclude Include="Handle.h" />
     <ClInclude Include="HookAnalyzer.h" />
     <ClInclude Include="Log.h" />
+    <ClInclude Include="PipeRecord.h" />
     <ClInclude Include="PortableExecutable.h" />
     <ClInclude Include="ProcessedDumpInfo.h" />
     <ClInclude Include="RemoteDatabase.h" />

@@ -48,7 +48,8 @@ struct DaemonData
 	DWORD lpDebugPipeName;//at debugged process
 	DWORD lpDebugPipeNameLen;
 	BOOL ProcessReport;
-	int dwReserved[8];
+	BOOL NewPipeFormat;
+	int dwReserved[7];
 };
 
 static_assert(sizeof(DaemonData) == 64);
@@ -258,7 +259,7 @@ private:
 	HANDLE DaemonPipe = INVALID_HANDLE_VALUE;
 	bool FinishDaemonLoop = false;
 	bool IsDaemonPipeOpen = false;
-	std::vector<char> DaemonCommBuffer;
+	std::vector<BYTE> DaemonCommBuffer;
 	std::atomic_bool IsDaemonMonitorOpen{ false };
 	bool HasTimeOut = false;
 
@@ -340,6 +341,7 @@ public:
 
 	bool EnableDaemon();
 	bool DaemonProcessReport();
+	bool NewPipeFormat();
 	void EnterDaemonLoop();
 	void PushReportLineToDaemon(const wchar_t* Line);
 	void ClearDaemonReport();
@@ -350,7 +352,7 @@ public:
 	void CloseDaemonPipe();
 	bool WaitForDaemonConnect();
 	void DaemonCommLoop();
-	void ProcessReceivedMessage(const char* Msg, LONG Error);
+	void ProcessReceivedMessage(bool NewPipeFormat, const char* Msg, LONG Error);
 	DWORD InitializeDaemon(bool FromException);
 	DWORD GetDaemonThreadID();
 	void StartDaemonMonitor(bool FromException);

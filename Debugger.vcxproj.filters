@@ -19,6 +19,9 @@
       <UniqueIdentifier>{bec5c0d4-9567-49fd-b8c7-2fca75c17b09}</UniqueIdentifier>
       <Extensions>cpp;c;cxx;rc;def;r;odl;idl;hpj;bat</Extensions>
     </Filter>
+    <Filter Include="Remote">
+      <UniqueIdentifier>{b966205e-1605-42e9-9d47-3d59cf7d0a90}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -48,9 +51,6 @@
     <ClCompile Include="HookAnalyzer.cpp">
       <Filter>Main</Filter>
     </ClCompile>
-    <ClCompile Include="RemoteDatabase.cpp">
-      <Filter>Main</Filter>
-    </ClCompile>
     <ClCompile Include="ExtFunc.cpp">
       <Filter>Main</Filter>
     </ClCompile>
@@ -61,10 +61,16 @@
       <Filter>File</Filter>
     </ClCompile>
     <ClCompile Include="DbgCmdServer.cpp">
-      <Filter>Main</Filter>
+      <Filter>Remote</Filter>
+    </ClCompile>
+    <ClCompile Include="RemoteDatabase.cpp">
+      <Filter>Remote</Filter>
     </ClCompile>
     <ClCompile Include="ProcessedDumpInfo.cpp">
       <Filter>Main</Filter>
+    </ClCompile>
+    <ClCompile Include="PipeRecord.cpp">
+      <Filter>Remote</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -104,9 +110,6 @@
     <ClInclude Include="HookAnalyzer.h">
       <Filter>Main</Filter>
     </ClInclude>
-    <ClInclude Include="RemoteDatabase.h">
-      <Filter>Main</Filter>
-    </ClInclude>
     <ClInclude Include="ExtFunc.h">
       <Filter>Main</Filter>
     </ClInclude>
@@ -120,10 +123,16 @@
       <Filter>Main</Filter>
     </ClInclude>
     <ClInclude Include="DbgCmdServer.h">
-      <Filter>Main</Filter>
+      <Filter>Remote</Filter>
+    </ClInclude>
+    <ClInclude Include="RemoteDatabase.h">
+      <Filter>Remote</Filter>
     </ClInclude>
     <ClInclude Include="ProcessedDumpInfo.h">
       <Filter>Main</Filter>
+    </ClInclude>
+    <ClInclude Include="PipeRecord.h">
+      <Filter>Remote</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

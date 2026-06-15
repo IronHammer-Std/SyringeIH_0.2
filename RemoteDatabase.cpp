@@ -9,6 +9,7 @@
 #include <winternl.h>
 #include <algorithm>
 #include "DbgCmdServer.h"
+#include "PipeRecord.h"
 #include <thread>
 
 
@@ -301,6 +302,14 @@ bool RemoteDatabase::DaemonProcessReport()
 	return Enabled;
 }
 
+bool RemoteDatabase::NewPipeFormat()
+{
+	RemoteBuf<DaemonData> rd(Dbg, (DaemonData*)GetDaemonDataAddr());
+	const auto& DaemonData = *rd;
+	auto Enabled = DaemonData.NewPipeFormat;
+	return Enabled;
+}
+
 void RemoteDatabase::EnterDaemonLoop()
 {
 	if (!EnableDaemon())
@@ -421,10 +430,10 @@ void RemoteDatabase::DaemonCommLoop()
 {
 	//Wait For Data In
 	//Process and Output
-	memset(DaemonCommBuffer.data(), 0, DaemonCommBuffer.size());
 	DWORD bytesRead;
+	bool NewFormat = NewPipeFormat();
 
-	if (!ReadFile(DaemonPipe, DaemonCommBuffer.data(), DaemonCommBuffer.size(), &bytesRead, NULL)) 
+	if (!ReadPipeRecordFromFile(NewFormat, DaemonPipe, DaemonCommBuffer, &bytesRead))
 	{
 		DWORD error = GetLastError();
 		if (error == ERROR_BROKEN_PIPE) {
@@ -432,15 +441,15 @@ void RemoteDatabase::DaemonCommLoop()
 			return;
 		}
 		Log::WriteLine(__FUNCTION__ ": ReadFile 失败， GetLastError() : %u", error);
-		ProcessReceivedMessage("无法读取指令信息。", error);
+		ProcessReceivedMessage(NewFormat, "无法读取指令信息。", error);
 		return;
 	}
-	DaemonCommBuffer[bytesRead] = '\0';
+	DaemonCommBuffer.push_back(0); // Ensure null-termination	
 	if (LogDaemonInteraction)
 	{
 		Log::WriteLine(__FUNCTION__": 接收到守护线程管道数据：%s", DaemonCommBuffer.data());
 	}
-	ProcessReceivedMessage(DaemonCommBuffer.data(), ERROR_SUCCESS);
+	ProcessReceivedMessage(NewFormat, (const char*)DaemonCommBuffer.data(), ERROR_SUCCESS);
 }
 
 std::string UTF8toANSI(const std::string& UTF8);
@@ -457,7 +466,7 @@ std::string PackSuccessMsg(const std::string& Msg)
 	return "{\"Response\": " + EscapeString(Msg) + ",\"Error\": 0 }";
 }
 
-void RemoteDatabase::ProcessReceivedMessage(const char* Msg, LONG Error)
+void RemoteDatabase::ProcessReceivedMessage(bool NewPipeFormat, const char* Msg, LONG Error)
 {
 	std::string Result;
 	/*
@@ -522,9 +531,9 @@ void RemoteDatabase::ProcessReceivedMessage(const char* Msg, LONG Error)
 		Log::WriteLine(__FUNCTION__": 向管道发送数据：%s", Result.c_str());
 	}
 
-	if (!WriteFile(DaemonPipe, Result.c_str(),
+	if (!WritePipeRecordToFile(NewPipeFormat, DaemonPipe, Result.c_str(),
 		static_cast<DWORD>(Result.size()),
-		&bytesWritten, NULL)) 
+		&bytesWritten)) 
 	{
 		Log::WriteLine(__FUNCTION__ ": 无法写入数据。程序试图写入：\n%s", Result.c_str());
 	}
