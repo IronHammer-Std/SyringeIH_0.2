@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <atomic>
 #include <string_view>
+#include <map>
 
 class SyringeDebugger;
 class PortableExecutable;
@@ -275,6 +276,7 @@ private:
 	std::unordered_map<std::string, CopyRange> CopyRangeList;
 	std::unordered_map < std::string, std::unordered_map<DWORD, AddrRemoteData*>> AddrList;
 	std::unordered_map<DWORD, AddrRemoteData*> AbsAddrList;
+	std::map<DWORD, AddrRemoteData*> HookStmToAddr;
 
 	DWORD RemoteDBStart, RemoteDBEnd;
 	DoubleInteractData Interact;

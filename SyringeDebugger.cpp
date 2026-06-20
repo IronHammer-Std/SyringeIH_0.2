@@ -992,7 +992,6 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 		InfoHandler.AddString("\t堆栈转储信息：（按可能的栈帧分段）");
 		auto const esp = reinterpret_cast<DWORD*>(context.Esp);
 		auto const eend = LongStackDump ? (DWORD*)0xFFFFFFFF : esp + 0x100;
-		bool PrevHook = false;
 		for (auto p = esp; p < eend; ++p)
 		{
 			DWORD dw;
@@ -1003,19 +1002,13 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 					auto [Rel1, Str1] = AnalyzeAddr(dw);
 					if (IsExecutable(pInfo.hProcess, (LPCVOID)dw))
 					{
-						if (PrevHook)
-						{
-							InfoHandler.AddString("（钩子地址为%X）", dw);
-							PrevHook = false;
-						}
-						else if (!OnlyShowStackFrame)
+						if (!OnlyShowStackFrame)
 							InfoHandler.AddString();
 					}
 					else if (OnlyShowStackFrame)
 					{
 						continue;
 					}
-					if (Database.InHookRange(dw))PrevHook = true;
 					InfoHandler.AddString("\t0x%08X:\t0x%08X （%s+%X）[访问权限：%s]", 
 						p, dw, Str1.c_str(), Rel1,
 						GetAccessStr(pInfo.hProcess, (LPCVOID)dw).c_str());

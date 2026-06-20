@@ -655,6 +655,7 @@ void RemoteDatabase::CreateData()
 		ad.Base.HookDataAddr += sizeof(AddrHiddenHeader);
 		ad.HookOpAddr = ad.Base.HookDataAddr;
 		AddrList[ad.RelativeLib][ad.Base.Addr] = &ad;
+		HookStmToAddr[ad.Base.HookDataAddr] = &ad;
 	}
 
 	for (auto& ph : Dbg->v_AllHooks)
@@ -721,8 +722,32 @@ std::pair<DWORD, std::string> RemoteDatabase::AnalyzeDBAddr(DWORD RemoteAddr)
 std::pair<DWORD, std::string> RemoteDatabase::AnalyzeHookAddr(DWORD RemoteAddr)
 {
 	if(!InHookRange(RemoteAddr))return std::make_pair(RemoteAddr, "UNKNOWN");
+
+	//look up from HookStmToAddr - the key is the start of hook data, so find the largest key that is <= RemoteAddr
+	auto it = HookStmToAddr.upper_bound(RemoteAddr);
+	if (it != HookStmToAddr.begin() && it != HookStmToAddr.end())
+	{
+		--it;
+		if (RemoteAddr < it->first + it->second->HookDataSize)
+		{
+			char buf[200];
+			if(!it->second->RelativeLib.empty())sprintf_s(buf, 200, "钩在 %s!0x%X 的钩子", it->second->RelativeLib.c_str(), it->second->Base.Addr);
+			else sprintf_s(buf, 200, "钩在 0x%X 的钩子", it->second->Base.Addr);
+			
+			if (!it->second->RelativeLib.empty())Dbg->InfoHandler.AddString("\t钩在 %s!0x%X 的钩子信息：", it->second->RelativeLib.c_str(), it->second->Base.Addr);
+			else Dbg->InfoHandler.AddString("\t钩在 0x%X 的钩子信息：", it->second->Base.Addr);
+			auto& hd = Dbg->Analyzer.ByAddressEx[it->second->RelativeLib][it->second->Base.Addr];
+			for (auto& ph : hd)
+			{
+				Dbg->InfoHandler.AddString("\t - %s!%s, 覆盖 %d 字节", ph.Lib.c_str(), ph.Proc.c_str(), ph.Len);
+			}
+			return std::make_pair(RemoteAddr - it->first, buf);
+		}
+	}
+
 	return std::make_pair(RemoteAddr- (DWORD)HookMem.get(), "钩子代码");
 }
+
 
 void RemoteDatabase::GenerateAbsAddrList()
 {
