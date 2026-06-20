@@ -7,6 +7,7 @@
 #include "Support.h"
 #include "Setting.h"
 #include "SymMap.h"
+#include "Shlwapi.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -1228,7 +1229,7 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 			auto const& hook = *loop_LoadLibrary;
 			ReadMem(&GetData()->ProcAddress, &hook->proc_address, 4);
 
-			if (!IgnoreInvalidHookLibs.count(hook->lib) && !hook->proc_address)
+			if (!IgnoreInvalidHookLibs.count(PathFindFileNameA(hook->lib)) && !hook->proc_address)
 			{
 				Log::WriteLine(
 					__FUNCTION__ ": 不能在 %s 库中找到函数"
