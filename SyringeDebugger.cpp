@@ -566,7 +566,7 @@ const std::unordered_map<int, std::string> ExitStatusMap
 	{STATUS_DLL_INIT_FAILED,                     "动态链接库初始化失败。"},
 	{STATUS_FLOAT_MULTIPLE_FAULTS,               "发生多个浮点异常。"},
 	{STATUS_FLOAT_MULTIPLE_TRAPS,                "发生多个浮点陷阱。"},
-	{STATUS_REG_NAT_CONSUMPTION,                 "IA‑64 寄存器堆栈溢出。"},
+	{STATUS_REG_NAT_CONSUMPTION,                 "IA-64 寄存器堆栈溢出。"},
 	{STATUS_INVALID_CRUNTIME_PARAMETER,          "传递给 C 运行时函数的参数无效。"},
 	{STATUS_ASSERTION_FAILURE,                   "ASSERT断言失败。"}
 };
