@@ -1689,8 +1689,12 @@ void SyringeDebugger::Run(std::string_view const arguments)
 	SymCleanup(pInfo.hProcess);
 	CloseHandle(pInfo.hProcess);
 
-	Log::WriteLine(
-		__FUNCTION__ ": 正常退出，返回码：%X (%u).", exit_code, exit_code);
+	auto exit_code_str = GetExitStatusStr((int)exit_code);
+
+	Log::WriteLine(__FUNCTION__ ": 正常退出，返回码：%X (%u).", exit_code, exit_code);
+	if(!exit_code_str.empty()) {
+		Log::WriteLine(__FUNCTION__ ": 退出情况：%s", exit_code_str.c_str());
+	}
 	Log::WriteLine();	
 }
 
