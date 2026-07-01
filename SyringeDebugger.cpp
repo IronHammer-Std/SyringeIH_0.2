@@ -21,7 +21,7 @@
 #pragma comment(lib, "Psapi.lib ")
 
 using namespace std;
-#define EXCEPTION_UNKNOWN_ERROR_1 0xE06D7363
+#define CPP_STD_EXCEPTION 0xE06D7363
 #define STATUS_FAIL_FAST_EXCEPTION 0xC0000409
 #define MS_VC_EXCEPTION 0x406D1388
 #define DOTNET_CLR_NOTICE 0x04242420
@@ -499,7 +499,7 @@ EXCEPTION_SINGLE_STEP,"正在单步调试中，已执行一个指令。"}, {
 EXCEPTION_STACK_OVERFLOW,"栈空间发生上溢。"}, {
 STATUS_CONTROL_C_EXIT,"程序接收到Ctrl+C信号，要求退出。"}, {
 STATUS_FAIL_FAST_EXCEPTION ,"快速失败机制要求程序立即退出。"}, {
-EXCEPTION_UNKNOWN_ERROR_1 ,"抛出的C++异常不被捕获，可能由于缺少对应的catch块，或C++的运行时配置存在异常。"}
+CPP_STD_EXCEPTION ,"抛出的C++异常不被捕获，可能由于缺少对应的catch块，或C++的运行时配置存在异常。"}
 };
 /*
 沟槽的微软中文
@@ -547,7 +547,7 @@ EXCEPTION_STACK_OVERFLOW,"线程占用了其堆栈。"
 }, {
 0xC0000409 ,"存在未捕获的快速异常。"}//STATUS_FAIL_FAST_EXCEPTION E06D7363
 , {
-EXCEPTION_UNKNOWN_ERROR_1 ,"某段代码抛出了一个异常，但没有人捕获它；也很可能是C++的运行时配置存在异常。"}
+CPP_STD_EXCEPTION ,"某段代码抛出了一个异常，但没有人捕获它；也很可能是C++的运行时配置存在异常。"}
 };
 */
 
@@ -1398,20 +1398,24 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 
 		return DBG_CONTINUE;
 	}
-	else if (exceptCode == EXCEPTION_UNKNOWN_ERROR_1)//非致命的
+	else if (exceptCode == CPP_STD_EXCEPTION)//非致命的
 	{
 		char Buf[260];
+		auto nParam = dbgEvent.u.Exception.ExceptionRecord.NumberParameters;
 		auto ptr = dbgEvent.u.Exception.ExceptionRecord.ExceptionInformation[1];
 		
 		LPVOID pRemotePtr;
 		ReadMem(((LPBYTE)ptr) + 4, &pRemotePtr, sizeof(pRemotePtr));
-		ReadMem(pRemotePtr, Buf, sizeof(Buf) - 1);
+		bool Success = ReadMem(pRemotePtr, Buf, sizeof(Buf) - 1);
 
 		ReadMem(((LPBYTE)ptr), &pRemotePtr, sizeof(pRemotePtr));
 		auto [Rel, DllStr]=AnalyzeAddr((DWORD)pRemotePtr);
 
 		Log::WriteLine("程序触发了一个可能已经捕获的异常。（一般不会影响运行）");
-		Log::WriteLine("%s ：%s", DllStr.c_str(), Buf);
+		if(nParam > 1 && Success)
+			Log::WriteLine("%s ：%s", DllStr.c_str(), Buf);
+		else
+			Log::WriteLine("%s ：抛出了C++异常", DllStr.c_str());
 		if (CheckInsignificantException)
 			return StackDumpInteraction(dbgEvent, false);
 		return DBG_EXCEPTION_NOT_HANDLED;
@@ -1470,7 +1474,9 @@ DWORD SyringeDebugger::StackDumpInteraction(DEBUG_EVENT const& dbgEvent, bool Fr
 
 	if (!Continuable)
 	{
-		Log::WriteLine(__FUNCTION__ ": 无法处理错误，程序不可继续运行。");
+		//Skip C++ Exception, they're considered fatal even in a try-catch block
+		if(dbgEvent.u.Exception.ExceptionRecord.ExceptionCode != CPP_STD_EXCEPTION)
+			Log::WriteLine(__FUNCTION__ ": 无法处理错误，程序不可继续运行。");
 		InfoHandler.Flush();
 		return DBG_EXCEPTION_NOT_HANDLED;
 	}
