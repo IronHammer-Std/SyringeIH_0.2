@@ -204,6 +204,7 @@ public:
 	struct AllocData {
 		static constexpr auto CodeSize = 0x40u;
 		std::byte LoadLibraryFunc[CodeSize];
+		void* pImLoadLibraryEx;
 		void* ProcAddress;
 		void* ReturnEIP;
 		char LibName[MaxNameLength];

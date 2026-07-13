@@ -1075,6 +1075,26 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 
 void SyringeDebugger::PreloadData()
 {
+	//Write pImLoadLibraryEx
+	HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
+	if (!hKernel32) {
+		throw_lasterror_or(ERROR_NOT_FOUND, "kernel32.dll");
+	}
+	FARPROC pLoadLibraryA = GetProcAddress(hKernel32, "LoadLibraryA");
+	FARPROC pLoadLibraryExA = GetProcAddress(hKernel32, "LoadLibraryExA");
+	Log::WriteLine(__FUNCTION__ ": LoadLibraryA = 0x%08X, LoadLibraryExA = 0x%08X", pLoadLibraryA, pLoadLibraryExA);
+	ptrdiff_t diff = (BYTE*)pLoadLibraryExA - (BYTE*)pLoadLibraryA;
+	Log::WriteLine(__FUNCTION__ ": LoadLibraryExA - LoadLibraryA = 0x%08X", diff);
+	FARPROC pImLoadLibrary_Value;
+	Log::WriteLine(__FUNCTION__ ": pImLoadLibrary = 0x%08X", pImLoadLibrary);
+	ReadMem(pImLoadLibrary, &pImLoadLibrary_Value, sizeof(FARPROC));
+	Log::WriteLine(__FUNCTION__ ": pImLoadLibrary_Value = 0x%08X", pImLoadLibrary_Value);
+	FARPROC pImLoadLibraryEx_Value = (FARPROC)((BYTE*)pImLoadLibrary_Value + diff);
+	Log::WriteLine(__FUNCTION__ ": pImLoadLibraryEx_Value = 0x%08X", pImLoadLibraryEx_Value);
+	PatchMem(&GetData()->pImLoadLibraryEx, &pImLoadLibraryEx_Value, sizeof(FARPROC));
+	Log::WriteLine(__FUNCTION__ ": pImLoadLibraryEx = 0x%08X", &GetData()->pImLoadLibraryEx);
+
+
 	RemoteMapSuffix = pInfo.dwProcessId;
 	SharedMemHeader hd;
 	hd.WritingComplete = 0;
@@ -1534,7 +1554,7 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		exe.c_str(), printable(arguments));
 	DebugProcess(arguments);
 
-	Log::WriteLine(__FUNCTION__ ": 分配了 0x%u 个字节的内存。", AllocDataSize);
+	Log::WriteLine(__FUNCTION__ ": 分配了 0x%X 个字节的内存。", AllocDataSize);
 	pAlloc = AllocMem(nullptr, AllocDataSize);
 
 	
@@ -1549,32 +1569,35 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		//0x64, 0xA1, 0x30, 0x00, 0x00, 0x00, //mov eax, fs:[0x30]
 		//0xA3, INIT, INIT, INIT, INIT, //mov PEBTableEntry, eax
 		//0x58, // pop eax
-		0x50, // push eax
-		0x51, // push ecx
-		0x52, // push edx
-		0x68, INIT, INIT, INIT, INIT, // push offset pdLibName
+		0x50,								// push eax
+		0x51,								// push ecx
+		0x52,								// push edx
+		0x6A, 0x08,                         // push 8(=LOAD_WITH_ALTERED_SEARCH_PATH)
+		0x6A, 0x00,                         // push 0
+		0x68, INIT, INIT, INIT, INIT,		// push offset pdLibName
 		0xFF, 0x15, INIT, INIT, INIT, INIT, // call pImLoadLibrary
-		0x85, 0xC0, // test eax, eax
-		0x74, 0x0C, // jz
-		0x68, INIT, INIT, INIT, INIT, // push offset pdProcName
-		0x50, // push eax
+		0x85, 0xC0,							// test eax, eax
+		0x74, 0x0C,							// jz
+		0x68, INIT, INIT, INIT, INIT,		// push offset pdProcName
+		0x50,								// push eax
 		0xFF, 0x15, INIT, INIT, INIT, INIT, // call pdImGetProcAddress
-		0xA3, INIT, INIT, INIT, INIT, // mov pdProcAddress, eax
-		0x5A, // pop edx
-		0x59, // pop ecx
-		0x58, // pop eax
+		0xA3, INIT, INIT, INIT, INIT,		// mov pdProcAddress, eax
+		0x5A,								// pop edx
+		0x59,								// pop ecx
+		0x58,								// pop eax
 		INT3, NOP, //NOP, NOP, NOP // int3 and some padding
 	};
 
 	std::array<BYTE, AllocDataSize> data;
 	static_assert(AllocData::CodeSize >= sizeof(cLoadLibrary));
 	ApplyPatch(data.data(), cLoadLibrary);
-	ApplyPatch(data.data() + 0x04, &GetData()->LibName);
-	ApplyPatch(data.data() + 0x0A, pImLoadLibrary);
-	ApplyPatch(data.data() + 0x13, &GetData()->ProcName);
-	ApplyPatch(data.data() + 0x1A, pImGetProcAddress);
-	ApplyPatch(data.data() + 0x1F, &GetData()->ProcAddress);
-	ApplyPatch(data.data() + 0x2E, Database.GetDblInteractData().FinalAddr);
+	ApplyPatch(data.data() + 0x08, &GetData()->LibName);
+	//ApplyPatch(data.data() + 0x0E, pImLoadLibrary);
+	ApplyPatch(data.data() + 0x0E, &GetData()->pImLoadLibraryEx);
+	ApplyPatch(data.data() + 0x17, &GetData()->ProcName);
+	ApplyPatch(data.data() + 0x1E, pImGetProcAddress);
+	ApplyPatch(data.data() + 0x23, &GetData()->ProcAddress);
+	ApplyPatch(data.data() + 0x32, Database.GetDblInteractData().FinalAddr);
 	PatchMem(pAlloc, data.data(), data.size());
 
 	Log::WriteLine(__FUNCTION__ ": 载入代码位于 0x%08X", &GetData()->LoadLibraryFunc);
