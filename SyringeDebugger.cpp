@@ -1082,17 +1082,17 @@ void SyringeDebugger::PreloadData()
 	}
 	FARPROC pLoadLibraryA = GetProcAddress(hKernel32, "LoadLibraryA");
 	FARPROC pLoadLibraryExA = GetProcAddress(hKernel32, "LoadLibraryExA");
-	Log::WriteLine(__FUNCTION__ ": LoadLibraryA = 0x%08X, LoadLibraryExA = 0x%08X", pLoadLibraryA, pLoadLibraryExA);
+	//Log::WriteLine(__FUNCTION__ ": LoadLibraryA = 0x%08X, LoadLibraryExA = 0x%08X", pLoadLibraryA, pLoadLibraryExA);
 	ptrdiff_t diff = (BYTE*)pLoadLibraryExA - (BYTE*)pLoadLibraryA;
-	Log::WriteLine(__FUNCTION__ ": LoadLibraryExA - LoadLibraryA = 0x%08X", diff);
+	//Log::WriteLine(__FUNCTION__ ": LoadLibraryExA - LoadLibraryA = 0x%08X", diff);
 	FARPROC pImLoadLibrary_Value;
-	Log::WriteLine(__FUNCTION__ ": pImLoadLibrary = 0x%08X", pImLoadLibrary);
+	//Log::WriteLine(__FUNCTION__ ": pImLoadLibrary = 0x%08X", pImLoadLibrary);
 	ReadMem(pImLoadLibrary, &pImLoadLibrary_Value, sizeof(FARPROC));
-	Log::WriteLine(__FUNCTION__ ": pImLoadLibrary_Value = 0x%08X", pImLoadLibrary_Value);
+	//Log::WriteLine(__FUNCTION__ ": pImLoadLibrary_Value = 0x%08X", pImLoadLibrary_Value);
 	FARPROC pImLoadLibraryEx_Value = (FARPROC)((BYTE*)pImLoadLibrary_Value + diff);
-	Log::WriteLine(__FUNCTION__ ": pImLoadLibraryEx_Value = 0x%08X", pImLoadLibraryEx_Value);
+	//Log::WriteLine(__FUNCTION__ ": pImLoadLibraryEx_Value = 0x%08X", pImLoadLibraryEx_Value);
 	PatchMem(&GetData()->pImLoadLibraryEx, &pImLoadLibraryEx_Value, sizeof(FARPROC));
-	Log::WriteLine(__FUNCTION__ ": pImLoadLibraryEx = 0x%08X", &GetData()->pImLoadLibraryEx);
+	//Log::WriteLine(__FUNCTION__ ": pImLoadLibraryEx = 0x%08X", &GetData()->pImLoadLibraryEx);
 
 
 	RemoteMapSuffix = pInfo.dwProcessId;
