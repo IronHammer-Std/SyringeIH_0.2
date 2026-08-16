@@ -224,6 +224,254 @@ DWORD __fastcall SyringeDebugger::RelativeOffset(void const* pFrom, void const* 
 	return to - from;
 }
 
+// SyringeEx 移植：把 encoder request 里的相对操作数解析为绝对地址。
+static void ResolveRelativeOperands(
+	ZydisEncoderRequest& req,
+	ZydisDecodedInstruction const& instruction,
+	ZydisDecodedOperand const* operands,
+	ZyanU64 srcAddr)
+{
+	for (ZyanU8 i = 0; i < req.operand_count; ++i)
+	{
+		if (req.operands[i].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+		{
+			ZyanU64 absAddr;
+			if (ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(
+					&instruction, &operands[i], srcAddr, &absAddr)))
+			{
+				req.operands[i].imm.u = absAddr;
+			}
+		}
+		else if (req.operands[i].type == ZYDIS_OPERAND_TYPE_MEMORY)
+		{
+			ZyanU64 absAddr;
+			if (ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(
+					&instruction, &operands[i], srcAddr, &absAddr)))
+			{
+				req.operands[i].mem.displacement =
+					static_cast<ZyanI64>(absAddr);
+			}
+		}
+	}
+}
+
+// SyringeEx 移植：相对指令修复。
+// 被 hook 覆盖的字节里若含相对寻址指令（Jcc/JMP/CALL），原样拷贝到远处
+// trampoline 后 rel8/rel32 会指向错误位置。这里用 Zydis 解码→解析绝对目标→
+// 强制 near 编码→按新地址重编码；prologue 内部目标重映射到搬迁后的位置。
+// （IH 的 hook 声明均位于指令边界，无需额外防护；解码失败时原样拷贝回退。）
+std::vector<BYTE> SyringeDebugger::RebuildInstructions(
+	BYTE const* bytes, size_t size, DWORD originalAddr, DWORD newAddr)
+{
+	ZydisDecoder decoder;
+	ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_COMPAT_32, ZYDIS_STACK_WIDTH_32);
+
+	// --- Pass 1: decode all instructions and classify relative branches ---
+
+	struct InstructionInfo
+	{
+		size_t srcOffset;       // offset into original bytes
+		ZyanU8 srcLength;       // original instruction length
+		bool intraPrologue;     // relative branch targets within the prologue
+		size_t targetSrcOffset; // source offset of branch target (intra-prologue only)
+		size_t outputSize;      // size in the output buffer
+		size_t outputOffset;    // offset within the output buffer
+		std::optional<ZydisEncoderRequest> encoderReq; // cached encoder request (relative instrs only)
+	};
+
+	std::vector<InstructionInfo> infos;
+	size_t tailOffset = size; // offset of undecoded tail, if any
+
+	{
+		size_t offset = 0;
+		size_t outOff = 0;
+		while (offset < size)
+		{
+			ZydisDecodedInstruction instruction;
+			ZydisDecodedOperand operands[ZYDIS_MAX_OPERAND_COUNT];
+
+			auto const srcAddr = static_cast<ZyanU64>(originalAddr + offset);
+
+			if (ZYAN_FAILED(ZydisDecoderDecodeFull(
+					&decoder, bytes + offset, size - offset, &instruction, operands)))
+			{
+				Log::WriteLine(
+					__FUNCTION__ ": 无法解码 0x%08X 处的指令，"
+					"剩余 %u 字节将原样拷贝。这通常意味着 0x%08X 处"
+					"有一个错误的 return 0 钩子。",
+					static_cast<DWORD>(srcAddr), static_cast<unsigned>(size - offset),
+					originalAddr);
+
+				tailOffset = offset;
+				break;
+			}
+
+			InstructionInfo info{};
+			info.srcOffset = offset;
+			info.srcLength = instruction.length;
+			info.outputSize = instruction.length; // default fallback
+			info.intraPrologue = false;
+			info.targetSrcOffset = 0;
+
+			if (instruction.attributes & ZYDIS_ATTRIB_IS_RELATIVE)
+			{
+				// 只有 Jcc、JMP、CALL 有 near (rel32) 形式。
+				// LOOP/LOOPE/LOOPNE/JCXZ/JECXZ/JRCXZ 只有 rel8，
+				// 但 Zydis 把它们归为 COND_BR，因此按助记符排除。
+				auto const cat = instruction.meta.category;
+				auto const mn = instruction.mnemonic;
+				bool const hasNearForm =
+					(cat == ZYDIS_CATEGORY_COND_BR
+						|| cat == ZYDIS_CATEGORY_UNCOND_BR
+						|| cat == ZYDIS_CATEGORY_CALL)
+					&& mn != ZYDIS_MNEMONIC_LOOP
+					&& mn != ZYDIS_MNEMONIC_LOOPE
+					&& mn != ZYDIS_MNEMONIC_LOOPNE
+					&& mn != ZYDIS_MNEMONIC_JCXZ
+					&& mn != ZYDIS_MNEMONIC_JECXZ
+					&& mn != ZYDIS_MNEMONIC_JRCXZ;
+
+				// Find the immediate operand and resolve its absolute target.
+				for (ZyanU8 i = 0; i < instruction.operand_count_visible; ++i)
+				{
+					if (operands[i].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+					{
+						ZyanU64 absAddr;
+						if (ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(
+								&instruction, &operands[i], srcAddr, &absAddr)))
+						{
+							// Check if target falls within the prologue.
+							if (absAddr >= originalAddr
+								&& absAddr < originalAddr + size)
+							{
+								if (hasNearForm)
+								{
+									info.intraPrologue = true;
+									info.targetSrcOffset =
+										static_cast<size_t>(absAddr - originalAddr);
+								}
+								else
+								{
+									Log::WriteLine(
+										__FUNCTION__ ": 0x%08X 处的相对指令"
+										"目标是 prologue 内部但无 near 编码。"
+										"0x%08X 处的钩子可能无法正确工作。",
+										static_cast<DWORD>(srcAddr),
+										originalAddr);
+								}
+							}
+						}
+						break;
+					}
+				}
+
+				// Build and cache the encoder request for pass 2.
+				ZydisEncoderRequest req;
+				if (!ZYAN_FAILED(ZydisEncoderDecodedInstructionToEncoderRequest(
+						&instruction, operands,
+						instruction.operand_count_visible, &req)))
+				{
+					ResolveRelativeOperands(
+						req, instruction, operands, srcAddr);
+
+					if (hasNearForm)
+					{
+						// 强制 near 编码，保证输出大小与最终落点无关。
+						req.branch_type = ZYDIS_BRANCH_TYPE_NEAR;
+						req.branch_width = ZYDIS_BRANCH_WIDTH_32;
+					}
+
+					info.encoderReq = req;
+
+					if (hasNearForm)
+					{
+						// 6 bytes for Jcc near (0F 8x rel32), 5 bytes for JMP/CALL (E9/E8 rel32).
+						info.outputSize = (instruction.meta.category == ZYDIS_CATEGORY_COND_BR)
+							? 6u : 5u;
+					}
+				}
+			}
+
+			info.outputOffset = outOff;
+			outOff += info.outputSize;
+
+			infos.push_back(info);
+			offset += instruction.length;
+		}
+	}
+
+	// --- Pass 2: emit relocated instructions ---
+
+	std::vector<BYTE> result;
+	result.reserve(size * 2);
+
+	for (size_t idx = 0; idx < infos.size(); ++idx)
+	{
+		auto const& info = infos[idx];
+		auto const srcAddr = static_cast<ZyanU64>(originalAddr + info.srcOffset);
+		auto const dstAddr = static_cast<ZyanU64>(newAddr + result.size());
+
+		if (!info.encoderReq)
+		{
+			result.insert(result.end(),
+				bytes + info.srcOffset,
+				bytes + info.srcOffset + info.srcLength);
+			continue;
+		}
+
+		auto req = *info.encoderReq;
+
+		if (info.intraPrologue)
+		{
+			// 跳转目标是 prologue 内部指令：替换为它搬迁后的新绝对地址。
+			for (ZyanU8 i = 0; i < req.operand_count; ++i)
+			{
+				if (req.operands[i].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+				{
+					for (size_t j = 0; j < infos.size(); ++j)
+					{
+						if (infos[j].srcOffset == info.targetSrcOffset)
+						{
+							req.operands[i].imm.u = static_cast<ZyanU64>(
+								newAddr + infos[j].outputOffset);
+							break;
+						}
+					}
+					break;
+				}
+			}
+		}
+
+		BYTE encoded[ZYDIS_MAX_INSTRUCTION_LENGTH];
+		ZyanUSize encodedLen = sizeof(encoded);
+
+		if (ZYAN_FAILED(ZydisEncoderEncodeInstructionAbsolute(
+				&req, encoded, &encodedLen, dstAddr)))
+		{
+			Log::WriteLine(
+				__FUNCTION__ ": 无法重编码 0x%08X 处的指令，"
+				"%u 字节将原样拷贝。这通常意味着 0x%08X 处"
+				"有一个错误的 return 0 钩子。",
+				static_cast<DWORD>(srcAddr), info.srcLength,
+				originalAddr);
+
+			result.insert(result.end(),
+				bytes + info.srcOffset,
+				bytes + info.srcOffset + info.srcLength);
+		}
+		else
+		{
+			result.insert(result.end(), encoded, encoded + encodedLen);
+		}
+	}
+
+	// Append any undecoded tail bytes verbatim.
+	if (tailOffset < size)
+		result.insert(result.end(), bytes + tailOffset, bytes + size);
+
+	return result;
+}
+
 const char ExProc[300] = "Initialize";
 
 const BYTE _INIT = 0x00;
@@ -260,33 +508,44 @@ BYTE const wtf_call[38] =
 };
 */
 
-BYTE const hook_code_call[40] =
+#define POPFD_POPAD \
+	0x9D, /* POPFD */ \
+	/* start POPAD replica */ \
+	0x5F, /* POP EDI */ \
+	0x5E, /* POP ESI */ \
+	0x5D, /* POP EBP */ \
+	0x5B, /* POP EBX (temporary storage for modified ESP) */ \
+	0x8B, 0x44, 0x24, 0x0C, /* MOV EAX, [ESP + 0xC] (restore EAX which is last in PUSHAD order) */ \
+	0x89, 0x5C, 0x24, 0x0C, /* MOV [ESP + 0xC], EBX (place ESP last) */ \
+	0x5B, /* POP EBX */ \
+	0x5A, /* POP EDX */ \
+	0x59, /* POP ECX */ \
+	0x5C /* POP ESP (restore ESP last thus not corrupting the stack pointer before all POPs are done) */ \
+	/* end POPAD replica */
+
+BYTE const hook_code_call[] =
 {
-	0x60, 0x9C,                       // PUSHAD, PUSHFD
+	0x60, 0x9C, // PUSHAD, PUSHFD
 	0x68, _INIT, _INIT, _INIT, _INIT, // PUSH HookAddress
-	0x83, 0xEC, 0x04,                 // SUB ESP, 4
-	0x8D, 0x44, 0x24, 0x04,           // LEA EAX, [ESP + 4]
-	0x50,                             // PUSH EAX
+	0x54, // PUSH ESP (final REGISTERS* argument)
 	0xE8, _INIT, _INIT, _INIT, _INIT, // CALL ProcAddress
-	0x83, 0xC4, 0x0C,                 // ADD ESP, 0Ch
-	0x89, 0x44, 0x24, 0xF8,           // MOV ss:[ESP - 8], EAX
-	0x9D, 0x61,                       // POPFD, POPAD
-	0x83, 0x7C, 0x24, 0xD4, 0x00,     // CMP ss:[ESP - 2Ch], 0
-	0x74, 0x04,                       // JZ .proceed
-	0xFF, 0x64, 0x24, 0xD4,           // JMP ss:[ESP - 2Ch]
+	0x83, 0xC4, 0x08, // ADD ESP, 8
+	0x64, /* FS segment prefix */ 0xA3, 0x14, 0x00, 0x00, 0x00, // MOV fs:0x14, EAX
+	0x64, /* FS segment prefix */ 0x83, 0x3D, 0x14, 0x00, 0x00, 0x00, 0x00, // CMP DWORD PTR fs:0x14, 0
+	0x74, 0x18, // JE proceed
+
+	// jmp_to_address:
+	POPFD_POPAD,
+	0x64, /* FS segment prefix */ 0xFF, 0x25, 0x14, 0x00, 0x00, 0x00, // JMP DWORD PTR fs:0x14
+
+	// proceed:
+	POPFD_POPAD,
+	// here will be the overwritten bytes and jump back
 };
 
-BYTE const wtf_call[40] =
-{
-	_NOP, _NOP, _NOP, _NOP, _NOP,
-	_NOP, _NOP, _NOP, _NOP, _NOP,
-	_NOP, _NOP, _NOP, _NOP, _NOP,
-	_NOP, _NOP, _NOP, _NOP, _NOP, 
-	_NOP, _NOP, _NOP, _NOP, _NOP, 
-	_NOP, _NOP, _NOP, _NOP, _NOP, 
-	_NOP, _NOP, _NOP, _NOP, _NOP, 
-	_NOP, _NOP, _NOP, _NOP, _NOP, 
-};
+#undef POPFD_POPAD
+
+static_assert(sizeof(hook_code_call) == HookCodeCallSize, "hook_code_call 大小与 RemoteDatabase.h 的 HookCodeCallSize 不一致");
 
 BYTE const hook_jmp_back[5] = { 0xE9, _INIT, _INIT, _INIT, _INIT };
 BYTE const hook_jmp[5] = { 0xE9, _INIT, _INIT, _INIT, _INIT };
@@ -328,11 +587,19 @@ void SyringeDebugger::Handle_ApplyHook()
 			continue;
 		}
 
+		// SyringeEx 移植：相对指令重编码可能膨胀（短跳→near），分配上界取 overridden*3
 		auto const sz = it.second.hooks.size() * sizeof(hook_code_call)
-			+ sizeof(hook_jmp_back) + overridden;
+			+ sizeof(hook_jmp_back) + overridden * 3;
 
 		code.resize(sz);
 		auto p_code = code.data();
+
+		// 先读出被覆盖的原始字节，供 RebuildInstructions 使用
+		std::vector<BYTE> original_bytes(overridden);
+		if (overridden)
+		{
+			ReadMem(it.first, original_bytes.data(), overridden);
+		}
 
 		auto pAddr = Database.GetMem((DWORD)p_original_code);
 		BYTE* base;
@@ -367,8 +634,8 @@ void SyringeDebugger::Handle_ApplyHook()
 				//	base + (p_code - code.data() + 0x0D), hook.proc_address);
 				//ApplyPatch(p_code + 0x09, rel); // CALL
 				auto const rel = RelativeOffset(
-					base + (p_code - code.data() + 0x14), hook.proc_address);
-				ApplyPatch(p_code + 0x10, rel); // CALL
+					base + (p_code - code.data() + 0x0D), hook.proc_address);
+				ApplyPatch(p_code + 0x09, rel); // CALL
 
 				//FOR RESHADE
 				//auto const pdReturnEIP = &GetData()->ReturnEIP;
@@ -388,8 +655,8 @@ void SyringeDebugger::Handle_ApplyHook()
 				//	base + (p_code - code.data() + 0x0D), (const void*)NullOutput);
 				//ApplyPatch(p_code + 0x09, rel); // CALL
 				auto const rel = RelativeOffset(
-					base + (p_code - code.data() + 0x14), (const void*)NullOutput);
-				ApplyPatch(p_code + 0x10, rel); // CALL
+					base + (p_code - code.data() + 0x0D), (const void*)NullOutput);
+				ApplyPatch(p_code + 0x09, rel); // CALL
 
 				//FOR RESHADE
 				//auto const pdReturnEIP = &GetData()->ReturnEIP;
@@ -401,16 +668,22 @@ void SyringeDebugger::Handle_ApplyHook()
 			}
 			else
 			{
-				ApplyPatch(p_code, wtf_call);
+				std::fill_n(p_code, sizeof(hook_code_call), NOP);
 				p_code += sizeof(hook_code_call);
 			}
 		}
 
-		// write overridden bytes
+		// write overridden bytes（SyringeEx 移植：经 Zydis 重编码，修正相对寻址）
 		if (overridden)
 		{
-			ReadMem(it.first, p_code, overridden);
-			p_code += overridden;
+			auto const originalAddr = reinterpret_cast<DWORD>(it.first);
+			auto const newAddr = reinterpret_cast<DWORD>(base + (p_code - code.data()));
+
+			auto rebuilt = RebuildInstructions(
+				original_bytes.data(), overridden, originalAddr, newAddr);
+
+			std::memcpy(p_code, rebuilt.data(), rebuilt.size());
+			p_code += rebuilt.size();
 		}
 
 		// write the jump back
@@ -419,25 +692,43 @@ void SyringeDebugger::Handle_ApplyHook()
 			static_cast<BYTE*>(it.first) + 0x05);
 		ApplyPatch(p_code, hook_jmp_back);
 		ApplyPatch(p_code + 0x01, rel);
+		p_code += sizeof(hook_jmp_back);
 
-		PatchMem(base, code.data(), code.size());
+		auto const actual_sz = static_cast<DWORD>(p_code - code.data());
+		PatchMem(base, code.data(), actual_sz);
 
-		// dump
-		/*
-		Log::WriteLine("Call dump for 0x%08X at 0x%08X:", it.first, base);
-
-		code.resize(sz);
-		ReadMem(it.second.p_caller_code, code.data(), sz);
-
+		// dump（调试辅助：-RemoteDatabaseDump=true 时输出 trampoline 字节）
+		if (RemoteDatabaseDump)
+		{
+			Log::WriteLine("Call dump for 0x%08X at 0x%08X (%u bytes):", it.first, base, actual_sz);
+			std::vector<BYTE> dump_bytes(actual_sz + 48);
+			DWORD dumpRead = actual_sz + 48;
+			if (ReadMem(base, dump_bytes.data(), dumpRead))
+			{
 		std::string dump_str{ "\t\t" };
-		for(auto const& byte : code) {
 			char buffer[0x10];
-			sprintf(buffer, "%02X ", byte);
+				for (DWORD i = 0; i < dumpRead; ++i)
+				{
+					if (i == actual_sz) dump_str += "| ";
+					sprintf_s(buffer, "%02X ", dump_bytes[i]);
 			dump_str += buffer;
 		}
-
 		Log::WriteLine(dump_str.c_str());
-		Log::WriteLine();*/
+			}
+			if (overridden)
+			{
+				Log::WriteLine("Original bytes at hook site (%u):", overridden);
+				std::string orig_str{ "\t\t" };
+				char buffer[0x10];
+				for (size_t i = 0; i < overridden; ++i)
+				{
+					sprintf_s(buffer, "%02X ", original_bytes[i]);
+					orig_str += buffer;
+				}
+				Log::WriteLine(orig_str.c_str());
+			}
+			Log::WriteLine();
+		}
 
 		// patch original code
 
