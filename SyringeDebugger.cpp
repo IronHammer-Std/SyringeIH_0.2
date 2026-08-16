@@ -2495,7 +2495,11 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		switch(dbgEvent.dwDebugEventCode)
 		{
 		case CREATE_PROCESS_DEBUG_EVENT:
-			pInfo.hProcess = dbgEvent.u.CreateProcessInfo.hProcess;
+			// SyringeEx 对齐：保留 DebugProcess() 中 CreateProcess 获得的原始进程句柄
+			// （pInfo.hProcess 不被调试事件句柄覆盖）。调试事件的进程句柄在调试会话
+			// 结束时随调试对象失效，而原始句柄始终有效，供循环结束后的
+			// WaitForSingleObject / GetExitCodeProcess 使用。事件句柄直接关闭即可。
+			CloseHandle(dbgEvent.u.CreateProcessInfo.hProcess);
 			pInfo.dwThreadId = dbgEvent.dwProcessId;
 			pInfo.hThread = dbgEvent.u.CreateProcessInfo.hThread;
 			pInfo.dwThreadId = dbgEvent.dwThreadId;
@@ -2615,6 +2619,31 @@ void SyringeDebugger::Run(std::string_view const arguments)
 				TerminateProcess(pInfo.hProcess, 0);
 			}
 			continue;
+		}
+	}
+
+	// SyringeEx 对齐：RIP_EVENT 不携带退出码（事件到达时 exit_code 仍是初始的
+	// 0xFFFFFFFF），EXIT_PROCESS 的退出码也应以目标进程真正退出后的
+	// GetExitCodeProcess 结果为准。按 SyringeEx 的顺序先等待取码、后清理。
+	// WaitForProcessExit（默认 true，--nowait 关闭）对应 SyringeEx 的
+	// bWaitForProcessEnd：为 false 时跳过等待。
+	if (WaitForProcessExit)
+	{
+		Log::WriteLine(__FUNCTION__ ": 正在等待目标进程退出……");
+		auto const WaitResult = WaitForSingleObject(pInfo.hProcess, INFINITE);
+		if (WaitResult != WAIT_OBJECT_0)
+		{
+			Log::WriteLine(__FUNCTION__ ": 等待目标进程退出异常，WaitForSingleObject 返回 0x%X，GetLastError() = %u。",
+				WaitResult, GetLastError());
+		}
+		DWORD FinalExitCode = 0;
+		if (GetExitCodeProcess(pInfo.hProcess, &FinalExitCode))
+		{
+			exit_code = FinalExitCode;
+		}
+		else
+		{
+			Log::WriteLine(__FUNCTION__ ": 获取目标进程退出码失败，GetLastError() = %u。", GetLastError());
 		}
 	}
 
