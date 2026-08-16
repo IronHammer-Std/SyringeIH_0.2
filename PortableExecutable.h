@@ -1,4 +1,4 @@
-//A class to parse PE files
+﻿//A class to parse PE files
 #pragma once
 
 #define WIN32_LEAN_AND_MEAN
@@ -99,7 +99,7 @@ public:
 	IMAGE_SECTION_HEADER const* FindSection(
 		std::string_view name) const noexcept;
 
-	std::unordered_map<std::string, DWORD> PortableExecutable::GetExportSymbols() noexcept;
+	std::unordered_map<std::string, DWORD> GetExportSymbols() noexcept;
 
 private:
 	bool ReadFile();
