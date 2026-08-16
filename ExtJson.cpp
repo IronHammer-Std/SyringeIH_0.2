@@ -514,7 +514,7 @@ void JsonObject::SetOrCreateCopy(JsonObject Obj, bool Recurse)
 }
 
 JsonFile JsonObject::DetachObjectItem(const std::string& Str) { return cJSON_DetachItemFromObject(Object, Str.c_str()); }
-JsonFile JsonObject::DetachArrayItem(int Index) { cJSON_DetachItemFromArray(Object, Index); }
+JsonFile JsonObject::DetachArrayItem(int Index) { return cJSON_DetachItemFromArray(Object, Index); }
 
 
 void JsonObject::Merge(JsonObject Obj)
