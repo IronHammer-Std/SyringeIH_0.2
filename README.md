@@ -59,10 +59,13 @@ BEGIN/END 标记之间的、以 `{` 开头的行即 JSON；`TEXT` 段内为原�
   `handle_count/thread_count/module_count`、`phase{hooks_created,everything_ok}`、
   `modules[{name,path,base,size}]`。
 - **thread 段**（快照=每线程一个 `group:"snapshot"`；异常=仅出错线程一个 `group:"exception"`）：
-  `format/type/group/seq/tid`、`start{addr,module,offset}`（线程起始地址，
-  来自 `CREATE_THREAD_DEBUG_EVENT.lpStartAddress`）、`context{eax..edi,eip,esp,ebp,eflags}`
+  `format/type/group/seq/tid`、`name`（0x406D1388 命名机制登记的线程名；未命名时填
+  `"来自 {模块} 的线程"`）、`source`（线程来源 = 入口点经 AnalyzeAddr 解析出的模块名，
+  无法解析时为 null）、`start{addr,module,offset}`（线程起始地址，来自
+  `CREATE_THREAD_DEBUG_EVENT.lpStartAddress`）、`context{eax..edi,eip,esp,ebp,eflags}`
   （仅寄存器指针，**栈信息不进 JSON**）；异常段另附 `exception{code,addr,flags,params[],
   access,fault_addr}`（access/fault_addr 仅访问违例时出现）。
+  文本转储中，线程 ID 之后同样标注显示名（如 `线程 ID = 48908（来自 ntdll.dll 的线程）：`）。
 
 ### skill 提取规则
 

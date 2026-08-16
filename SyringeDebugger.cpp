@@ -937,7 +937,9 @@ std::string GetExitStatusStr(int Status)
 		}
 		else
 		{
-			return it->second;
+			// 修复：原为 return it->second;（it 在此处是 ExitStatusMap::end()，
+			// 解引用 end 迭代器读到头节点垃圾 → std::string 拷贝野指针崩溃）
+			return it2->second;
 		}
 	}
 	else
@@ -1308,7 +1310,8 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 	}
 
 	{
-		InfoHandler.AddString(__FUNCTION__ ": 异常线程ID = %u", dbgEvent.dwThreadId);
+		InfoHandler.AddString(__FUNCTION__ ": 异常线程ID = %u（%s）",
+			dbgEvent.dwThreadId, ThreadDisplayName(dbgEvent.dwThreadId).c_str());
 		InfoHandler.AddString(__FUNCTION__ ": ExceptionFlags = %08X", rcd.ExceptionFlags);
 		InfoHandler.AddString(__FUNCTION__ ": 共 %d 个参数", rcd.NumberParameters);
 		for (DWORD i = 0; i < rcd.NumberParameters; ++i)
@@ -1569,7 +1572,7 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 		EmitThreadReportSegment(seq, tid, "snapshot", nullptr);
 
 		InfoHandler.Tag = "thread:" + std::to_string(tid);
-		InfoHandler.AddString(__FUNCTION__ ": 线程 ID = %u：", tid);
+		InfoHandler.AddString(__FUNCTION__ ": 线程 ID = %u（%s）：", tid, ThreadDisplayName(tid).c_str());
 		DumpThreadStack(tid, info.Thread);
 		InfoHandler.Flush(); // 每线程立即落盘，保证 JSON 段与 TEXT 段紧邻
 	}
@@ -1777,6 +1780,15 @@ void SyringeDebugger::EmitThreadReportSegment(
 	cJSON_AddNumberToObject(root, "seq", static_cast<double>(seq));
 	cJSON_AddNumberToObject(root, "tid", static_cast<double>(tid));
 
+	// name：0x406D1388 命名机制登记的线程名；未命名时填“来自 xxx 的线程”
+	// source：线程来源（入口点经 AnalyzeAddr 解析出的模块名）
+	{
+		cJSON_AddStringToObject(root, "name", ThreadDisplayName(tid).c_str());
+		auto const source = ThreadSourceModule(tid);
+		if(!source.empty()) cJSON_AddStringToObject(root, "source", source.c_str());
+		else cJSON_AddNullToObject(root, "source");
+	}
+
 	// start：线程“创建者”线索（调试事件的 lpStartAddress 解析到模块+偏移）
 	{
 		cJSON* const start = JsonAddObject(root, "start");
@@ -1861,6 +1873,54 @@ void SyringeDebugger::EmitThreadReportSegment(
 		cJSON_Free(text);
 	}
 	cJSON_Delete(root);
+}
+
+// 线程“来源”模块：入口点经 AnalyzeAddr 解析出的模块名（剥离 !/+ 后的符号部分）。
+// AnalyzeAddr 的数据库/钩子范围判定可能把地址误报成非模块名（如 “RemoteDatabase”），
+// 因此仅当其解析结果命中实际加载模块时才采纳；否则回退到远程模块表二进制查找。
+std::string SyringeDebugger::ThreadSourceModule(DWORD const tid)
+{
+	LPVOID startAddr = nullptr;
+	if(auto const it = Threads.find(tid); it != Threads.end())
+		startAddr = it->second.StartAddress;
+	if(!startAddr) return {};
+
+	auto const start = reinterpret_cast<DWORD>(startAddr);
+
+	auto const modules = CollectRemoteModules(pInfo.hProcess);
+	std::string tableModule;
+	for(auto it = modules.rbegin(); it != modules.rend(); ++it)
+	{
+		if(start >= it->base && start < it->base + it->size)
+		{
+			tableModule = it->name;
+			break;
+		}
+	}
+
+	auto const analyzed = AnalyzeAddr(start);
+	auto const sep = analyzed.second.find_first_of("!+");
+	auto const module = sep == std::string::npos ? analyzed.second : analyzed.second.substr(0, sep);
+	if(!module.empty() && _stricmp(module.c_str(), "UNKNOWN") != 0)
+	{
+		for(auto const& m : modules)
+		{
+			if(_stricmp(m.name.c_str(), module.c_str()) == 0) return module;
+		}
+	}
+
+	return tableModule;
+}
+
+// 线程显示名：0x406D1388 命名机制登记的名字；未命名时填“来自 xxx 的线程”
+std::string SyringeDebugger::ThreadDisplayName(DWORD const tid)
+{
+	if(auto const it = Threads.find(tid); it != Threads.end() && !it->second.Name.empty())
+		return it->second.Name;
+
+	auto const source = ThreadSourceModule(tid);
+	if(!source.empty()) return "来自 " + source + " 的线程";
+	return "未命名线程";
 }
 
 void SyringeDebugger::PreloadData()
@@ -2293,7 +2353,76 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 	}
 	else if (exceptCode == MS_VC_EXCEPTION)
 	{
-		//TODO： 标记线程的名称
+		auto const& rcd = dbgEvent.u.Exception.ExceptionRecord;
+		// MSVC 线程命名异常：RaiseException(0x406D1388) 携带线程名。兼容三种常见布局：
+		//  A. 标准 MSVC 布局：参数[0] = 指向 THREADNAME_INFO{dwType==0x1000, szName, dwThreadID, dwFlags} 的指针；
+		//  B. 平铺布局：参数[0]==0x1000 魔法值，参数[1]=名称指针，参数[2]=线程ID(0=当前线程)；
+		//  C. 混合布局：参数[0]==0x1000 魔法值，参数[1]=指向 THREADNAME_INFO 的指针。
+		// 所有远程读取都经 ReadMem 失败防护；名称仅保留可打印字符并截断到 63 字节。
+		char nameBuf[64]{};
+		DWORD tid = dbgEvent.dwThreadId;
+		bool got = false;
+
+		struct ThreadNameInfo
+		{
+			DWORD dwType;
+			DWORD szName;
+			DWORD dwThreadID;
+			DWORD dwFlags;
+		};
+
+		if(rcd.NumberParameters >= 1 && rcd.ExceptionInformation[0] != 0x1000)
+		{
+			// A. 标准布局
+			ThreadNameInfo tni{};
+			if(ReadMem(reinterpret_cast<void*>(rcd.ExceptionInformation[0]), &tni, sizeof(tni)) &&
+				tni.dwType == 0x1000 && tni.szName)
+			{
+				if(ReadMem(reinterpret_cast<void*>(tni.szName), nameBuf, sizeof(nameBuf) - 1))
+				{
+					nameBuf[sizeof(nameBuf) - 1] = '\0';
+					got = nameBuf[0] != '\0';
+					if(tni.dwThreadID != 0 && tni.dwThreadID != 0xFFFFFFFF) tid = tni.dwThreadID;
+				}
+			}
+		}
+		else if(rcd.NumberParameters >= 2)
+		{
+			// B. 平铺布局：参数[1] 直接为名称指针
+			if(ReadMem(reinterpret_cast<void*>(rcd.ExceptionInformation[1]), nameBuf, sizeof(nameBuf) - 1))
+			{
+				nameBuf[sizeof(nameBuf) - 1] = '\0';
+				got = nameBuf[0] != '\0';
+			}
+			if(!got)
+			{
+				// C. 混合布局：参数[1] 指向 THREADNAME_INFO
+				ThreadNameInfo tni{};
+				if(ReadMem(reinterpret_cast<void*>(rcd.ExceptionInformation[1]), &tni, sizeof(tni)) &&
+					tni.dwType == 0x1000 && tni.szName &&
+					ReadMem(reinterpret_cast<void*>(tni.szName), nameBuf, sizeof(nameBuf) - 1))
+				{
+					nameBuf[sizeof(nameBuf) - 1] = '\0';
+					got = nameBuf[0] != '\0';
+					if(got && tni.dwThreadID != 0) tid = tni.dwThreadID;
+				}
+			}
+			if(got && rcd.NumberParameters >= 3 && rcd.ExceptionInformation[2] != 0)
+				tid = static_cast<DWORD>(rcd.ExceptionInformation[2]);
+		}
+
+		if(got)
+		{
+			// 只保留可打印字符（含高位字节），防止野指针读出的二进制垃圾进入日志/JSON
+			size_t len = 0;
+			while(nameBuf[len] && static_cast<unsigned char>(nameBuf[len]) >= 0x20) ++len;
+			nameBuf[len] = '\0';
+			if(nameBuf[0] && Threads.count(tid))
+			{
+				Threads[tid].Name = nameBuf;
+				Log::WriteLine(__FUNCTION__ ": 线程 %u 命名为 \"%s\"。", tid, nameBuf);
+			}
+		}
 		return DBG_CONTINUE;
 	}
 	else if (exceptCode == DOTNET_CLR_NOTICE)

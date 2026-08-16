@@ -158,6 +158,11 @@ public:
 	bool IsSnapshotBreakin(DEBUG_EVENT const& dbgEvent);
 	DWORD DebuggeeModuleBase(char const* moduleName);
 
+	// 线程显示名与来源：0x406D1388 命名机制登记的线程名；
+	// 未命名时显示“来自 {入口点模块} 的线程”（模块经 AnalyzeAddr 解析）
+	std::string ThreadDisplayName(DWORD tid);
+	std::string ThreadSourceModule(DWORD tid);
+
 	// 报告编目（syringeih.report.v1）：JSON 段与文本转储段（TEXT 标记见
 	// ProcessedDumpInfoHandler::Tag）。seq 为快照/异常共用的事件序号，
 	// 同一事件的所有段共享同一 seq。
@@ -215,6 +220,8 @@ public:
 		LPVOID lastBP{ nullptr };
 		// CREATE_PROCESS/CREATE_THREAD 调试事件报告的线程起始地址（“创建者”线索）
 		LPVOID StartAddress{ nullptr };
+		// MSVC 线程命名异常（0x406D1388）解码得到的线程名；空 = 未命名
+		std::string Name;
 	};
 
 	std::map<DWORD, ThreadInfo> Threads;
