@@ -31,11 +31,13 @@ extern "C" void __declspec(dllexport) __stdcall UpdateJson(const char* Name, con
 	Files[Name].Parse(Json);
 }
 
-extern "C" JsonObject __declspec(dllexport) __stdcall GetJson(const char* Name)
+using LPJSON = cJSON*;
+
+extern "C" LPJSON __declspec(dllexport) __stdcall GetJson(const char* Name)
 {
 	auto it = Files.find(Name);
-	if (it == Files.end())return NullJsonObject;
-	return it->second.GetObj();
+	if (it == Files.end())return NullJsonObject.GetRaw();
+	return it->second.GetObj().GetRaw();
 }
 
 extern "C" int __declspec(dllexport) __stdcall GetExportData(void)
@@ -71,3 +73,35 @@ extern "C" void __declspec(dllexport) __stdcall RestoreBackUp(int Addr)
 }
 
 
+
+typedef struct tagTHREADNAME_INFO
+{
+	DWORD dwType;        // must be 0x1000
+	LPCSTR szName;       // pointer to name (in user addr space)
+	DWORD dwThreadID;    // thread ID (-1=caller thread)
+	DWORD dwFlags;       // reserved for future use, must be zero
+} THREADNAME_INFO;
+
+void SetThreadName_Impl(DWORD dwThreadID, LPCSTR szThreadName)
+{
+	THREADNAME_INFO info;
+	info.dwType = 0x1000;
+	info.szName = szThreadName;
+	info.dwThreadID = dwThreadID;
+	info.dwFlags = 0;
+
+	__try
+	{
+		RaiseException(0x406D1388, 0, sizeof(info) / sizeof(DWORD), (DWORD*)&info);
+	}
+	__except (EXCEPTION_CONTINUE_EXECUTION)
+	{
+		int a = 1;
+		(void)a;
+	}
+}
+
+extern "C" void __declspec(dllexport) __stdcall SetThreadName(DWORD dwThreadID, LPCSTR szThreadName)
+{
+	SetThreadName_Impl(dwThreadID, szThreadName);
+}
