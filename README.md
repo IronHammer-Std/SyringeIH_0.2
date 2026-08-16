@@ -25,11 +25,16 @@ SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=
 - **`--handshakes`**：别名，等价于 `-EnableHandshakeCheck=true`（SyringeIH 默认即开启握手检查）。
 - **`--snapshot`**：快照广播模式（等价于 `-StackSnapshot=true`；Syringe.json 中 `"StackSnapshot": true` 亦可触发）。
   此模式下 Syringe 不启动游戏、不走注入流程：枚举本机所有运行中的 SyringeIH，按身份映射
-  （`Local\SyringeIH.Snapshot.{pid}`，内含 Magic/协议版本/软件版本/GamePid）三段验证——是 SyringeIH、
-  协议版本受支持（协议只增不减，当前 1 为兼容起点，更早版本放弃）——之后向每个目标进程
-  `DebugBreakProcess` 请求一次全线程栈快照，结果由各目标 SyringeIH 写入自己的 `syringe.log`，
-  广播器把打断数量/版本/PID 等汇总写入独立的 `syringe_snapshot.log`（不接触同目录 syringe 的
-  `syringe.log`），随后退出（成功返回 0）。
+  （`Local\SyringeIH.Snapshot.{pid}`，内含 Magic/协议版本/软件版本/GamePid + 请求载荷区）三段验证——
+  是 SyringeIH、协议版本受支持（协议只增不减，当前 1 为兼容起点，更早版本放弃）——之后向每个
+  目标进程写入本轮请求载荷并 `DebugBreakProcess` 请求一次全线程栈快照，结果由各目标 SyringeIH
+  写入自己的 `syringe.log`，广播器把打断数量/版本/PID 等汇总写入独立的 `syringe_snapshot.log`
+  （不接触同目录 syringe 的 `syringe.log`），随后退出（成功返回 0）。
+  请求载荷为序列化 JSON 对象（携带影响快照呈现形式的配置；上限 4096 字节，超限截断；
+  每次广播覆写、按目标定向）。首个载荷参数：
+  - **`SnapshotFileName`**：Syringe.json 参数（默认 `""`，可用 `-SnapshotFileName=xxx` 覆盖）；
+    广播时原样复述进载荷；接收方非空时，**本次快照的全程内容**（摘要/request/process/thread/TEXT
+    各段）输出到该文件而非 `syringe.log`（syringe.log 句柄保持打开，结束后恢复，不截断）。
 - 另新增 JSON 设置项 **`WaitForProcessExit`**（默认 true）。
 
 ## 快照 / 异常报告格式（skill 接口）v1
@@ -42,17 +47,21 @@ SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=
 
 ```
 @@SyringeIH:JSON:BEGIN:process:{seq}@@      @@SyringeIH:JSON:END:process:{seq}@@
+@@SyringeIH:JSON:BEGIN:request:{seq}@@      @@SyringeIH:JSON:END:request:{seq}@@
 @@SyringeIH:JSON:BEGIN:thread:{tid}@@       @@SyringeIH:JSON:END:thread:{tid}@@
 @@SyringeIH:TEXT:BEGIN:thread:{tid}@@       @@SyringeIH:TEXT:END:thread:{tid}@@
 ```
 
-识别正则：`^@@SyringeIH:(JSON|TEXT):(BEGIN|END):(process|thread):(\d+)@@$`。
+识别正则：`^@@SyringeIH:(JSON|TEXT):(BEGIN|END):(process|request|thread):(\d+)@@$`。
 BEGIN/END 标记之间的、以 `{` 开头的行即 JSON；`TEXT` 段内为原样栈转储（含夹带，不解析）。
 `seq` 为快照/异常共用的事件序号，同一事件的所有段共享同一 seq；线程按 TID 升序、
 模块按基址升序输出。
 
 ### 段 Schema（字段集固定，缺数据填 `null`；地址为 `"0x%08X"` 字符串，计数/字节为数字）
 
+- **request 段**（可选，仅快照；有请求载荷时出现）：`format/type/group/seq` 恒有（`type:"request"`），
+  载荷本体嵌套在 `payload` 对象内——广播器写入的序列化 JSON（携带影响快照呈现形式的配置），
+  经接收端净化重序列化为单行，与快照同 `seq`。
 - **process 段**（每次快照一个，`group:"snapshot"`）：`format/type/group/seq/epoch_ms/time/trigger`、
   `syringe{pid,version,protocol}`、`pid/main_tid/exe/path/image_base/image_size/exe_timestamp/crc`、
   `uptime_ms/cpu{user_ms,kernel_ms}/memory{working_set,pagefile,peak_working_set}`、

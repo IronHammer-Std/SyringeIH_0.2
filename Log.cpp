@@ -8,6 +8,11 @@
 
 FileHandle Log::File;
 
+namespace
+{
+	FileHandle SavedLogFile;
+}
+
 bool AlwaysFlush = true;
 
 void PrintTimeStampToFile(const FileHandle& File)
@@ -40,6 +45,20 @@ void Log::Flush() noexcept
 void Log::Close() noexcept
 {
 	File.clear();
+}
+
+void Log::Redirect(char const* const pFilename) noexcept
+{
+	if(!File || !pFilename || !*pFilename) return;
+	SavedLogFile = std::move(File); // 暂存原句柄（保持打开，不截断）
+	File = FileHandle(_fsopen(pFilename, "w", _SH_DENYWR));
+}
+
+void Log::RedirectBack() noexcept
+{
+	if(!SavedLogFile) return;
+	File.clear();                 // 关闭重定向文件
+	File = std::move(SavedLogFile); // 恢复原句柄
 }
 
 void Log::WriteRaw(char const* const pText) noexcept

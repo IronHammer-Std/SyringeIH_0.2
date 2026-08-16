@@ -1,12 +1,15 @@
-﻿// 线程命名（0x406D1388）端到端自动化测试。
+﻿// 线程命名（0x406D1388）与快照请求载荷的端到端自动化测试。
 // 在 Tests.exe 进程内跑完整 SyringeDebugger 调试会话，验证：
 //   - 命名线程名进入 syringe 日志（"线程 N 命名为 \"CrashWorker\""）；
 //   - 异常报告 thread JSON 段携带 "name":"CrashWorker" 与 group=exception；
-//   - 异常文本转储头部为 "异常线程ID = N（CrashWorker）"。
+//   - 异常文本转储头部为 "异常线程ID = N（CrashWorker）"；
+//   - 广播载荷经身份映射写入 → 快照输出 request 段（统一契约包装）。
 #include "TestHarness.h"
 
 #include "SyringeDebugger.h"
 #include "Log.h"
+#include "Snapshot.h"
+#include "Setting.h"
 #include "cJSON.h"
 
 #include <windows.h>
@@ -14,7 +17,9 @@
 
 #include <cstdio>
 #include <cstring>
+#include <direct.h>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -156,6 +161,219 @@ namespace
 		DeleteFileA("tests_syringe.log");
 		SetCurrentDirectoryA(oldCwd);
 	}
+
+	// 载荷端到端：在 nametest.exe 的 5s SEH 保活窗口内，从会话内写入载荷并打断，
+	// 断言快照输出 request 段（统一契约包装）与文本摘要
+	void RunPayloadScenario()
+	{
+		std::string exeDir, releaseDir;
+		if(!GetTestDirs(exeDir, releaseDir))
+		{
+			printf("  SKIP: 无法定位测试资产目录\n");
+			return;
+		}
+
+		auto const targetPath = exeDir + "\\nametest.exe";
+		if(!PathFileExistsA(targetPath.c_str()))
+		{
+			printf("  SKIP: 缺少 nametest.exe（先构建 Nametest* 工程）\n");
+			return;
+		}
+		auto const srcDll = releaseDir + "\\SyringeEx.dll";
+		auto const dstDll = exeDir + "\\SyringeEx.dll";
+		if(!PathFileExistsA(srcDll.c_str()))
+		{
+			printf("  SKIP: 缺少 SyringeEx.dll（%s）\n", srcDll.c_str());
+			return;
+		}
+		CopyFileA(srcDll.c_str(), dstDll.c_str(), FALSE);
+
+		char oldCwd[MAX_PATH];
+		GetCurrentDirectoryA(MAX_PATH, oldCwd);
+		SetCurrentDirectoryA(exeDir.c_str());
+		Log::Open("tests_syringe.log");
+
+		auto const payload = std::string("{\"tool\":\"tests\",\"mode\":\"verify\",\"n\":42}");
+
+		try
+		{
+			SyringeDebugger Debugger{ targetPath };
+			Debugger.FindDLLs();
+
+			// 会话内辅助线程：写入载荷 → 打断 → 稍后终止目标让 Run 返回
+			std::thread breaker([&]()
+			{
+				Sleep(2500);
+				SnapshotWritePayload(GetCurrentProcessId(), payload);
+				DebugBreakProcess(Debugger.pInfo.hProcess);
+				Sleep(2000);
+				TerminateProcess(Debugger.pInfo.hProcess, 0);
+			});
+
+			Debugger.Run("");
+			breaker.join();
+		}
+		catch(...)
+		{
+			printf("  SKIP: 调试会话异常退出（环境不完整？）\n");
+		}
+
+		Sleep(3500);
+		Log::Flush();
+		Log::Close();
+
+		auto const logText = ReadWholeLog("tests_syringe.log");
+		CHECK(logText.find("收到快照请求") != std::string::npos);
+		CHECK(logText.find("快照载荷：") != std::string::npos);
+
+		bool requestSeen = false;
+		bool payloadKeySeen = false;
+		for(auto const& seg : ReadJsonSegments("tests_syringe.log"))
+		{
+			auto* const obj = cJSON_Parse(seg.c_str());
+			if(!obj) continue;
+			auto* const type = cJSON_GetObjectItem(obj, "type");
+			if(type && type->valuestring && strcmp(type->valuestring, "request") == 0)
+			{
+				requestSeen = true;
+				auto* const payloadObj = cJSON_GetObjectItem(obj, "payload");
+				if(payloadObj)
+				{
+					auto* const tool = cJSON_GetObjectItem(payloadObj, "tool");
+					if(tool && tool->valuestring && strcmp(tool->valuestring, "tests") == 0)
+						payloadKeySeen = true;
+				}
+			}
+			cJSON_Delete(obj);
+		}
+		CHECK(requestSeen);
+		CHECK(payloadKeySeen);
+
+		DeleteFileA("tests_syringe.log");
+		SetCurrentDirectoryA(oldCwd);
+	}
+
+	// SnapshotFileName 重定向端到端：载荷指定输出文件后，本次快照全程内容
+	// 应写入该文件（syringe.log 只保留异常报告等非快照内容）
+	void RunRedirectScenario()
+	{
+		std::string exeDir, releaseDir;
+		if(!GetTestDirs(exeDir, releaseDir))
+		{
+			printf("  SKIP: 无法定位测试资产目录\n");
+			return;
+		}
+
+		auto const targetPath = exeDir + "\\nametest.exe";
+		if(!PathFileExistsA(targetPath.c_str()))
+		{
+			printf("  SKIP: 缺少 nametest.exe（先构建 Nametest* 工程）\n");
+			return;
+		}
+		auto const srcDll = releaseDir + "\\SyringeEx.dll";
+		auto const dstDll = exeDir + "\\SyringeEx.dll";
+		if(!PathFileExistsA(srcDll.c_str()))
+		{
+			printf("  SKIP: 缺少 SyringeEx.dll（%s）\n", srcDll.c_str());
+			return;
+		}
+		CopyFileA(srcDll.c_str(), dstDll.c_str(), FALSE);
+
+		char oldCwd[MAX_PATH];
+		GetCurrentDirectoryA(MAX_PATH, oldCwd);
+		SetCurrentDirectoryA(exeDir.c_str());
+		Log::Open("tests_syringe.log");
+		DeleteFileA("snapshot_redirect_test.log");
+
+		auto const payload = std::string(
+			"{\"tool\":\"tests\",\"SnapshotFileName\":\"snapshot_redirect_test.log\"}");
+
+		try
+		{
+			SyringeDebugger Debugger{ targetPath };
+			Debugger.FindDLLs();
+
+			std::thread breaker([&]()
+			{
+				Sleep(2500);
+				SnapshotWritePayload(GetCurrentProcessId(), payload);
+				DebugBreakProcess(Debugger.pInfo.hProcess);
+				Sleep(2000);
+				TerminateProcess(Debugger.pInfo.hProcess, 0);
+			});
+
+			Debugger.Run("");
+			breaker.join();
+		}
+		catch(...)
+		{
+			printf("  SKIP: 调试会话异常退出（环境不完整？）\n");
+		}
+
+		Sleep(3500);
+		Log::Flush();
+		Log::Close();
+
+		auto const mainLog = ReadWholeLog("tests_syringe.log");
+		auto const redirectLog = ReadWholeLog("snapshot_redirect_test.log");
+
+		// 重定向文件：本次快照全程内容在此
+		CHECK(redirectLog.find("收到快照请求") != std::string::npos);
+		CHECK(redirectLog.find("本次快照输出重定向至") != std::string::npos);
+		CHECK(redirectLog.find("快照载荷：") != std::string::npos);
+		CHECK(redirectLog.find("@@SyringeIH:JSON:BEGIN:request:") != std::string::npos);
+		CHECK(redirectLog.find("@@SyringeIH:JSON:BEGIN:process:") != std::string::npos);
+		CHECK(redirectLog.find("栈快照输出完成") != std::string::npos);
+
+		// request 段的 payload 原样复述了 SnapshotFileName
+		bool fileRelayed = false;
+		for(auto const& seg : ReadJsonSegments("snapshot_redirect_test.log"))
+		{
+			auto* const obj = cJSON_Parse(seg.c_str());
+			if(!obj) continue;
+			auto* const type = cJSON_GetObjectItem(obj, "type");
+			if(type && type->valuestring && strcmp(type->valuestring, "request") == 0)
+			{
+				auto* const p = cJSON_GetObjectItem(obj, "payload");
+				if(p)
+				{
+					auto* const f = cJSON_GetObjectItem(p, "SnapshotFileName");
+					if(f && f->valuestring &&
+						strcmp(f->valuestring, "snapshot_redirect_test.log") == 0)
+						fileRelayed = true;
+				}
+			}
+			cJSON_Delete(obj);
+		}
+		CHECK(fileRelayed);
+
+		// 主日志：无任何快照内容（异常报告照旧在 syringe.log）
+		CHECK(mainLog.find("收到快照请求") == std::string::npos);
+		CHECK(mainLog.find("快照 #") == std::string::npos);
+		CHECK(mainLog.find("@@SyringeIH:JSON:BEGIN:process:") == std::string::npos);
+		CHECK(mainLog.find("异常线程ID = ") != std::string::npos);
+
+		DeleteFileA("tests_syringe.log");
+		DeleteFileA("snapshot_redirect_test.log");
+		SetCurrentDirectoryA(oldCwd);
+	}
+}
+
+// 载荷映射单元往返：注册 → 写入 → 读取 → 超限截断 → 空载荷清除
+TEST_CASE(snapshot_payload_roundtrip)
+{
+	CHECK(SnapshotRegister(1234));
+	auto const payload = std::string("{\"tool\":\"tests\",\"n\":1}");
+	CHECK(SnapshotWritePayload(GetCurrentProcessId(), payload));
+	CHECK(SnapshotReadPayload() == payload);
+
+	CHECK(SnapshotWritePayload(GetCurrentProcessId(), std::string(SNAPSHOT_PAYLOAD_MAX + 100, 'x')));
+	CHECK(SnapshotReadPayload().size() == SNAPSHOT_PAYLOAD_MAX);
+
+	CHECK(SnapshotWritePayload(GetCurrentProcessId(), ""));
+	CHECK(SnapshotReadPayload().empty());
+
+	SnapshotUnregister();
 }
 
 TEST_CASE(threadname_hybrid_layout)
@@ -168,4 +386,59 @@ TEST_CASE(threadname_msvc_canonical_layout)
 {
 	// nametest_std.exe 在工作线程命名并崩溃 → 崩溃线程非主线程
 	RunNamingScenario("nametest_std.exe", false);
+}
+
+TEST_CASE(snapshot_payload_request_segment)
+{
+	RunPayloadScenario();
+}
+
+// SnapshotFileName 参数解析：命令行覆盖
+TEST_CASE(setting_snapshot_filename_cli)
+{
+	auto const old = SnapshotFileName;
+	std::vector<std::string_view> flags{ "-SnapshotFileName=snap_test.log" };
+	UpdateSetting(flags);
+	CHECK(SnapshotFileName == "snap_test.log");
+	SnapshotFileName = old;
+}
+
+// SnapshotFileName 参数解析：Syringe.json（默认空串；缺键时保持原值）
+TEST_CASE(setting_snapshot_filename_json)
+{
+	char cwd[MAX_PATH];
+	_getcwd(cwd, MAX_PATH);
+
+	char tmpDir[MAX_PATH];
+	GetTempPathA(MAX_PATH, tmpDir);
+	strcat_s(tmpDir, "syringe_setting_test");
+	CreateDirectoryA(tmpDir, nullptr);
+	SetCurrentDirectoryA(tmpDir);
+
+	FILE* f = fopen("Syringe.json", "wb");
+	if(f)
+	{
+		fputs("{\"SnapshotFileName\":\"from_json.log\"}", f);
+		fclose(f);
+	}
+
+	auto const old = SnapshotFileName;
+	SnapshotFileName = "";
+	ReadSetting();
+	CHECK(SnapshotFileName == "from_json.log");
+
+	SetCurrentDirectoryA(cwd);
+	SnapshotFileName = old;
+
+	char jsonPath[MAX_PATH];
+	strcpy_s(jsonPath, tmpDir);
+	strcat_s(jsonPath, "\\Syringe.json");
+	DeleteFileA(jsonPath);
+	RemoveDirectoryA(tmpDir);
+}
+
+// SnapshotFileName 端到端：载荷重定向快照全程输出
+TEST_CASE(snapshot_filename_redirect)
+{
+	RunRedirectScenario();
 }

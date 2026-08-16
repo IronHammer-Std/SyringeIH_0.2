@@ -12,13 +12,22 @@
 // 身份对象：命名文件映射 L"Local\\SyringeIH.Snapshot.{syringePid}"
 // 内容：SnapshotIdentity
 //   Magic            —— 固定值，识别“SyringeIH 快照协议家族”
-//   ProtocolVersion  —— 协议版本，只增不减；1 = 兼容起点（更早版本没有映射，直接放弃）
+//   ProtocolVersion  —— 协议版本，只增不减；1 = 兼容起点
 //   SoftwareVersion  —— Syringe 软件版本（十进制打包），供广播器记录
 //   GamePid          —— 被调试进程 PID，广播器的打断目标
-// 广播器验证链：映射存在（是 SyringeIH）→ Magic 正确 → 协议版本受支持 → 才 DebugBreakProcess(GamePid)
+//   PayloadLen       —— 载荷字节数；0 = 无载荷。作为“提交标志”最后写入
+//   Payload          —— UTF-8 载荷（序列化 JSON 对象），携带影响快照呈现形式的配置
+//
+// 载荷语义：
+//   - 生命周期：每次广播（触发快照）覆写一次；接收端在 Handle_Snapshot 时读取当前值；
+//   - 按目标定向：载荷写在每个目标各自的映射里，天然支持不同目标不同载荷；
+//   - 写序：先写 Payload 字节，最后写 PayloadLen（接收端以 PayloadLen!=0 判定提交完成）。
+// 广播器验证链：映射存在（是 SyringeIH）→ Magic 正确 → 协议版本受支持 →
+// 写入载荷 → 才 DebugBreakProcess(GamePid)
 #define SNAPSHOT_MAGIC             0x53595248u                             // 'SYRH'
 #define SNAPSHOT_PROTOCOL_VERSION  1u
 #define SNAPSHOT_SOFTWARE_VERSION  (VMAJOR * 1000000 + VMINOR * 10000 + VRELEASE * 100 + VBUILD)
+#define SNAPSHOT_PAYLOAD_MAX       4096u                                   // 载荷字节上限（超限截断）
 
 struct SnapshotIdentity
 {
@@ -26,6 +35,8 @@ struct SnapshotIdentity
 	DWORD ProtocolVersion;
 	DWORD SoftwareVersion;
 	DWORD GamePid;
+	DWORD PayloadLen;
+	char  Payload[SNAPSHOT_PAYLOAD_MAX];
 };
 
 inline std::wstring SnapshotMappingName(DWORD const syringePid)
@@ -36,6 +47,9 @@ inline std::wstring SnapshotMappingName(DWORD const syringePid)
 // 调试侧（接收端）：发布 / 撤销身份映射
 bool SnapshotRegister(DWORD gamePid);
 void SnapshotUnregister();
+
+// 接收端：读取自己映射里的当前载荷（PayloadLen == 0 → 空串）
+std::string SnapshotReadPayload();
 
 struct SnapshotScopeGuard
 {
@@ -53,11 +67,17 @@ struct SnapshotScopeGuard
 	SnapshotScopeGuard& operator=(SnapshotScopeGuard const&) = delete;
 };
 
-// 广播侧：一轮广播，返回进程退出码（0 = 成功）
-DWORD SnapshotBroadcast();
+// 广播侧：向指定目标（syringePid 的映射）覆写载荷；返回是否成功。
+// 超限截断到 SNAPSHOT_PAYLOAD_MAX；空串写入 PayloadLen = 0（清除旧载荷）。
+bool SnapshotWritePayload(DWORD syringePid, std::string_view payload);
+
+// 广播侧：一轮广播，返回进程退出码（0 = 成功）。
+// payload：本轮请求载荷（序列化 JSON）；当前所有目标写入同一载荷，
+// 按目标定向的载荷提供方式后续接入（写入发生在每个目标的映射上，机制已支持）。
+DWORD SnapshotBroadcast(std::string_view payload);
 
 // 报告编目：以无时间戳直写输出一个 JSON 段（BEGIN 标记行 / JSON 行 / END 标记行）
-// type: "process" | "thread"；key: 进程段用 seq、线程段用 tid 的十进制串
+// type: "process" | "thread" | "request"；key: 十进制串（进程/请求段用 seq、线程段用 tid）
 void WriteReportSegment(char const* type, char const* key, char const* jsonText);
 
 // Main 的日志文件选择：在解析 flags/JSON 之前做轻量预扫描

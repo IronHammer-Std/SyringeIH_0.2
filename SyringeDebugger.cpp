@@ -1531,11 +1531,35 @@ bool SyringeDebugger::IsSnapshotBreakin(DEBUG_EVENT const& dbgEvent)
 }
 
 // 快照处理：此时被调试进程已被调试系统整体挂起。
-// 编目输出：人读摘要 → process JSON 段 → 每线程 [ thread JSON 段 → TEXT 转储段（紧邻）]，
-// 随后清理 breakin 僵尸线程。
+// 编目输出：人读摘要 → request 段（如有载荷）→ process JSON 段 →
+// 每线程 [ thread JSON 段 → TEXT 转储段（紧邻）]，随后清理 breakin 僵尸线程。
+// 载荷指定 SnapshotFileName 时，本次快照全程内容重定向到该文件。
 DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 {
 	(void)dbgEvent;
+
+	// 先读请求载荷：其中的 SnapshotFileName 决定本次快照全程内容的输出文件
+	auto const payload = SnapshotReadPayload();
+	std::string snapshotFileName;
+	if(!payload.empty())
+	{
+		if(auto* const parsed = cJSON_Parse(payload.c_str()))
+		{
+			auto* const f = cJSON_GetObjectItem(parsed, "SnapshotFileName");
+			if(f && f->valuestring && f->valuestring[0]) snapshotFileName = f->valuestring;
+			cJSON_Delete(parsed);
+		}
+	}
+
+	// 重定向：非空且非 syringe.log 时，本次快照全程内容写入指定文件
+	// （syringe.log 句柄保持打开，快照结束后原样恢复，不截断）
+	bool redirected = false;
+	if(!snapshotFileName.empty() && _stricmp(snapshotFileName.c_str(), "syringe.log") != 0)
+	{
+		Log::Redirect(snapshotFileName.c_str());
+		redirected = true;
+		Log::WriteLine(__FUNCTION__ ": 本次快照输出重定向至 \"%s\"。", snapshotFileName.c_str());
+	}
 
 	Log::WriteLine(__FUNCTION__ ": 收到快照请求，输出全部线程栈快照……");
 	InitializeSymbols();
@@ -1563,6 +1587,34 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 		Log::WriteLine("%s", summary.c_str());
 	}
 
+	// 请求载荷：广播器写入的序列化 JSON（携带影响快照呈现形式的配置）。
+	// 以独立 request 段输出（统一契约包装 + 净化重序列化，防换行/标记注入）。
+	if(!payload.empty())
+	{
+		Log::WriteLine(__FUNCTION__ ": 快照载荷：%u 字节。", (unsigned)payload.size());
+		if(auto* const parsed = cJSON_Parse(payload.c_str()))
+		{
+			// TODO(载荷渲染配置): 载荷携带影响快照呈现形式的配置，
+			// 解析结果在此应用于本次快照（配置 schema 待定）
+			cJSON* const wrapper = cJSON_CreateObject();
+			cJSON_AddStringToObject(wrapper, "format", "syringeih.report.v1");
+			cJSON_AddStringToObject(wrapper, "type", "request");
+			cJSON_AddNumberToObject(wrapper, "seq", static_cast<double>(seq));
+			cJSON_AddItemToObject(wrapper, "payload", parsed); // 所有权移交 wrapper
+			char* const text = cJSON_PrintUnformatted(wrapper);
+			if(text)
+			{
+				WriteReportSegment("request", std::to_string(seq).c_str(), text);
+				cJSON_Free(text);
+			}
+			cJSON_Delete(wrapper);
+		}
+		else
+		{
+			Log::WriteLine(__FUNCTION__ ": 载荷不是合法 JSON，忽略（不输出 request 段）。");
+		}
+	}
+
 	EmitProcessReportSegment(seq);
 
 	for(auto const& [tid, info] : Threads)
@@ -1586,6 +1638,11 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 	}
 	SnapshotBreakinThreadId = 0;
 	Log::WriteLine(__FUNCTION__ ": 栈快照输出完成。");
+
+	if(redirected)
+	{
+		Log::RedirectBack();
+	}
 	return DBG_CONTINUE;
 }
 

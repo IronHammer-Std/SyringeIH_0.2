@@ -3,6 +3,7 @@
 #include "Support.h"
 #include "Setting.h"
 #include "Snapshot.h"
+#include "cJSON.h"
 #include <string>
 
 #include <commctrl.h>
@@ -43,7 +44,20 @@ int Run(std::string_view const arguments) {
 		// 快照广播模式：不启动游戏、不走注入流程，广播一圈打断后退出
 		if(StackSnapshot) {
 			Log::WriteLine("WinMain: 快照广播模式（StackSnapshot=true），开始广播……");
-			auto const code = SnapshotBroadcast();
+			// 载荷：把本机设置原样复述进载荷（首个参数 SnapshotFileName；
+			// 完整的载荷生成方式后续接入）
+			std::string payload;
+			if(!SnapshotFileName.empty()) {
+				cJSON* const root = cJSON_CreateObject();
+				cJSON_AddStringToObject(root, "SnapshotFileName", SnapshotFileName.c_str());
+				char* const text = cJSON_PrintUnformatted(root);
+				if(text) {
+					payload = text;
+					cJSON_Free(text);
+				}
+				cJSON_Delete(root);
+			}
+			auto const code = SnapshotBroadcast(payload);
 			Log::WriteLine("WinMain: 广播结束，返回码 %u。", code);
 			Log::Flush();
 			return static_cast<int>(code);

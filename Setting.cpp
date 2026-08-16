@@ -7,6 +7,7 @@
 bool ShowHookAnalysis = false;
 std::string DefaultExecName;
 std::string DefaultCmdLine;
+std::string SnapshotFileName;
 bool ShowHookAnalysis_ByLib = false;
 bool ShowHookAnalysis_ByAddr = false;
 std::vector<int> AddrRestriction;
@@ -197,6 +198,12 @@ void ReadSetting()
     {
         DefaultCmdLine = SObj.GetString();
         Log::WriteLine("DefaultCommandLine = \"%s\"", DefaultCmdLine.c_str());
+    }
+    SObj = Obj.GetObjectItem("SnapshotFileName");
+    if (SObj.Available() && SObj.IsTypeString())
+    {
+        SnapshotFileName = SObj.GetString();
+        Log::WriteLine("SnapshotFileName = \"%s\"", SnapshotFileName.c_str());
     }
     SObj = Obj.GetObjectItem("IgnoreInvalidHookLibs");
     if (SObj.Available() && SObj.IsTypeArray())
@@ -395,6 +402,12 @@ else if (v._Starts_with("-" #f "="))\
             v.remove_prefix(3);
             IncludeDLLs.emplace_back(v);
             Log::WriteLine("加入注入白名单 DLL \"%.*s\"", printable(v));
+        }
+        else if (v._Starts_with("-SnapshotFileName="))
+        {
+            v.remove_prefix(18);
+            SnapshotFileName = v;
+            Log::WriteLine("SnapshotFileName = \"%.*s\"", printable(v));
         }
         else if (v == "--detach")
         {

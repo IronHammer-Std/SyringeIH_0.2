@@ -57,6 +57,10 @@ extern std::string DefaultExtPack;
 extern std::string DefaultExecName;
 extern std::string DefaultCmdLine;
 
+// 快照输出文件名：Syringe.json 参数（默认 ""），可用 -SnapshotFileName= 覆盖；
+// 广播时原样复述进载荷；接收方非空时把本次快照全程内容输出到该文件
+extern std::string SnapshotFileName;
+
 
 
 #include "Version.h"

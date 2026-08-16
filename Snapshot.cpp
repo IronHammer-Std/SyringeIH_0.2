@@ -68,6 +68,50 @@ void SnapshotUnregister()
 	}
 }
 
+std::string SnapshotReadPayload()
+{
+	if(!SnapshotMappingView) return {};
+
+	auto const* const identity = static_cast<SnapshotIdentity const*>(SnapshotMappingView);
+	auto const len = identity->PayloadLen;
+	if(len == 0 || len > SNAPSHOT_PAYLOAD_MAX) return {};
+
+	return std::string(identity->Payload, len);
+}
+
+bool SnapshotWritePayload(DWORD const syringePid, std::string_view const payload)
+{
+	auto const mapping = OpenFileMappingW(
+		FILE_MAP_WRITE, FALSE, SnapshotMappingName(syringePid).c_str());
+	if(!mapping)
+	{
+		Log::WriteLine(__FUNCTION__ ": 打开目标 %u 的载荷映射失败，GetLastError() = %u。", syringePid, GetLastError());
+		return false;
+	}
+
+	auto const view = MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, sizeof(SnapshotIdentity));
+	if(!view)
+	{
+		Log::WriteLine(__FUNCTION__ ": 映射目标 %u 的载荷视图失败，GetLastError() = %u。", syringePid, GetLastError());
+		CloseHandle(mapping);
+		return false;
+	}
+
+	auto* const identity = static_cast<SnapshotIdentity*>(view);
+
+	// 先写载荷字节，最后写 PayloadLen（提交标志）
+	auto const len = (std::min)(payload.size(), size_t(SNAPSHOT_PAYLOAD_MAX));
+	if(len)
+	{
+		std::memcpy(identity->Payload, payload.data(), len);
+	}
+	identity->PayloadLen = static_cast<DWORD>(len);
+
+	UnmapViewOfFile(view);
+	CloseHandle(mapping);
+	return true;
+}
+
 bool CommandLineRequestsSnapshot(std::string_view const arguments)
 {
 	// 与 UpdateSetting 的真实语义对齐：--snapshot 或 -StackSnapshot=true
@@ -136,9 +180,14 @@ void WriteReportSegment(char const* const type, char const* const key, char cons
 	Log::WriteRaw(end.c_str());
 }
 
-DWORD SnapshotBroadcast()
+DWORD SnapshotBroadcast(std::string_view const payload)
 {
 	Log::WriteLine(__FUNCTION__ ": 正在枚举 Syringe 进程……");
+	if(!payload.empty())
+	{
+		Log::WriteLine(__FUNCTION__ ": 本轮请求载荷 %u 字节（超限将截断至 %u）。",
+			(unsigned)payload.size(), SNAPSHOT_PAYLOAD_MAX);
+	}
 
 	auto const hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	if(hSnapshot == INVALID_HANDLE_VALUE)
@@ -212,7 +261,10 @@ DWORD SnapshotBroadcast()
 				continue;
 			}
 
-			// 验证 3 通过：打断目标进程
+			// 验证 3 通过：写入本轮载荷（每个目标各自的映射，天然支持按目标定向），
+			// 写入失败降级为无载荷打断，不中断广播
+			SnapshotWritePayload(syringePid, payload);
+
 			auto const hGame = OpenProcess(
 				PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
 				PROCESS_VM_OPERATION | PROCESS_VM_WRITE,
@@ -231,8 +283,9 @@ DWORD SnapshotBroadcast()
 			if(ok)
 			{
 				++interrupted;
-				Log::WriteLine(__FUNCTION__ ":   已打断：SyringePID=%u 版本=%u 协议=%u GamePID=%u。",
-					syringePid, identity.SoftwareVersion, identity.ProtocolVersion, identity.GamePid);
+				Log::WriteLine(__FUNCTION__ ":   已打断：SyringePID=%u 版本=%u 协议=%u GamePID=%u 载荷=%u 字节。",
+					syringePid, identity.SoftwareVersion, identity.ProtocolVersion, identity.GamePid,
+					(unsigned)payload.size());
 			}
 			else
 			{
