@@ -17,6 +17,11 @@ struct MemCopyInfo;
 DWORD QuickHashCStr(const char* str);
 DWORD QuickHashCStrUpper(const char* str);
 
+// hook_code_call（SyringeDebugger.cpp 定义，SyringeEx 布局：
+// FS:[0x14] 每线程返回值 + POPAD 副本（支持改 ESP）+ CMP 前置（保留 ZF））的字节数。
+// 与 SyringeExDll 的 GetExportData/ExportOffsets.CodeSize 保持一致。
+constexpr int HookCodeCallSize = 73;
+
 struct RemoteDataHeader
 {
 	int Size;

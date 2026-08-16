@@ -13,7 +13,7 @@
 #include <thread>
 
 
-extern BYTE hook_code_call[40];
+extern BYTE hook_code_call[HookCodeCallSize];
 extern BYTE hook_jmp_back[5];
 extern BYTE hook_jmp[5];
 
@@ -639,8 +639,9 @@ void RemoteDatabase::CreateData()
 		}
 		ad.Base.HookCount = ad.HookID.size();
 
+		// SyringeEx 移植：远程分配按 overridden*3 预留（相对指令重编码可能膨胀）
 		auto const sz = sizeof(AddrHiddenHeader)+pp.second.size() * sizeof(hook_code_call)
-			+ sizeof(hook_jmp_back) + ad.Base.OverriddenCount;
+			+ sizeof(hook_jmp_back) + ad.Base.OverriddenCount * 3;
 
 		ad.Base.HookDataAddr = HookStm.PushAligned(sz,16);//align by 16
 		ad.HookDataSize = sz;
