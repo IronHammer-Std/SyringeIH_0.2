@@ -15,6 +15,9 @@
 #include <fstream>
 #include <memory>
 #include <numeric>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <Psapi.h>
 #include <DbgHelp.h>
 
@@ -705,15 +708,15 @@ void SyringeDebugger::Handle_ApplyHook()
 			DWORD dumpRead = actual_sz + 48;
 			if (ReadMem(base, dump_bytes.data(), dumpRead))
 			{
-		std::string dump_str{ "\t\t" };
-			char buffer[0x10];
+				std::string dump_str{ "\t\t" };
+				char buffer[0x10];
 				for (DWORD i = 0; i < dumpRead; ++i)
 				{
 					if (i == actual_sz) dump_str += "| ";
 					sprintf_s(buffer, "%02X ", dump_bytes[i]);
-			dump_str += buffer;
-		}
-		Log::WriteLine(dump_str.c_str());
+					dump_str += buffer;
+				}
+				Log::WriteLine(dump_str.c_str());
 			}
 			if (overridden)
 			{
@@ -1191,6 +1194,68 @@ void SyringeDebugger::InitializeSymbols()
 	g_symInitialized = true;
 }
 
+// gamemd.edb 崩溃数据库解析（Phobos ExceptionHandler::LoadExceptionDatabase() 的
+// 忠实复刻）。文件位于当前工作目录（游戏目录，与 Phobos 的相对路径查找一致），
+// 打不开则静默跳过；仅在载入成功时写一条日志。
+std::vector<SyringeDebugger::ExceptionDatabaseEntry> SyringeDebugger::LoadExceptionDatabase()
+{
+	std::vector<ExceptionDatabaseEntry> entries;
+
+	FILE* pFile = nullptr;
+	if (fopen_s(&pFile, "gamemd.edb", "r") != 0 || pFile == nullptr)
+		return entries;
+
+	char line[1200];
+
+	while (fgets(line, sizeof(line), pFile) != nullptr)
+	{
+		char* pCursor = line;
+		while (std::isspace(static_cast<unsigned char>(*pCursor)))
+			++pCursor;
+
+		if (*pCursor == '\0' || *pCursor == ';')
+			continue;
+
+		// 格式（与 Vinifera 共享）：0xADDRESS,canContinue,ignore,description
+		char* pContext = nullptr;
+		char* pToken = strtok_s(pCursor, ",", &pContext);
+		if (pToken == nullptr || pToken[0] != '0' || (pToken[1] != 'x' && pToken[1] != 'X'))
+			continue;
+
+		auto const address = static_cast<unsigned int>(strtoul(pToken + 2, nullptr, 16));
+
+		// CanContinue 与 Ignore 仅为格式兼容而解析，不使用；任一缺失则整行跳过。
+		if (strtok_s(nullptr, ",", &pContext) == nullptr || strtok_s(nullptr, ",", &pContext) == nullptr)
+			continue;
+
+		// 描述取第 3 个逗号之后到行尾（\r\n 截断），可包含逗号，原样保留。
+		char* pDescription = strtok_s(nullptr, "\r\n", &pContext);
+		if (pDescription == nullptr)
+			continue;
+
+		entries.push_back({ address, pDescription });
+	}
+
+	fclose(pFile);
+
+	Log::WriteLine(__FUNCTION__ ": 已从 gamemd.edb 载入 %u 条已知崩溃记录。",
+		static_cast<unsigned int>(entries.size()));
+
+	return entries;
+}
+
+// 按异常地址做精确相等匹配（与 Phobos 一致），命中返回描述，未命中返回 nullptr。
+char const* SyringeDebugger::FindExceptionDatabaseEntry(
+	std::vector<ExceptionDatabaseEntry> const& entries, unsigned int Address)
+{
+	for (auto const& entry : entries)
+	{
+		if (entry.Address == Address)
+			return entry.Description.c_str();
+	}
+	return nullptr;
+}
+
 bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skipped)
 {
 	auto& rcd = dbgEvent.u.Exception.ExceptionRecord;
@@ -1237,6 +1302,20 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 	InfoHandler.AddString(
 		"地址： 0x%08X（%s+%X）[访问权限：%s]", 
 		exceptAddr, Str.c_str(), Rel, GetAccessStr(pInfo.hProcess, exceptAddr).c_str());
+
+	// gamemd.edb 已知崩溃数据库：懒加载一次，异常地址精确命中时把描述
+	// 紧贴在报告标题正下方输出（与 Phobos "Additional information" 区同义）。
+	if (!bExceptionDatabaseLoaded)
+	{
+		ExceptionDatabase = LoadExceptionDatabase();
+		bExceptionDatabaseLoaded = true;
+	}
+
+	if (auto const pDescription = FindExceptionDatabaseEntry(ExceptionDatabase, (DWORD)exceptAddr))
+	{
+		InfoHandler.AddString("已知崩溃信息（gamemd.edb）：%s", pDescription);
+	}
+
 	InfoHandler.AddAddr((DWORD)exceptAddr, "");
 	if (IsExecutable(pInfo.hProcess, (LPCVOID)exceptAddr))InfoHandler.AddString("发生异常的地址为可执行的代码。");
 	else InfoHandler.AddString("发生异常的地址不是代码，可能为分配的内存。");
@@ -1576,8 +1655,85 @@ DWORD SyringeDebugger::Handle_BreakPoint(DEBUG_EVENT const& dbgEvent)
 		{
 			Log::WriteLine(__FUNCTION__ ": 成功载入所需函数地址.");
 			Log::Flush();
+
+			if (v_FeatureFlags.empty())
+			{
+				// 收集唯一 hook DLL × FeatureFlagNames，作为特性标志协商队列
+				std::unordered_set<std::string> UniqueLibs;
+				for (auto const* phook : v_AllHooks)
+				{
+					UniqueLibs.insert(phook->lib);
+				}
+				for (auto const& lib : UniqueLibs)
+				{
+					for (auto const& name : FeatureFlagNames)
+					{
+						FeatureFlagEntry entry{};
+						strncpy_s(entry.lib, lib.c_str(), MaxNameLength - 1);
+						strncpy_s(entry.symbol, name.data(), MaxNameLength - 1);
+						v_FeatureFlags.emplace_back(entry);
+					}
+				}
+			}
+			loop_FeatureFlags = v_FeatureFlags.begin();
 			bDLLsLoaded = true;
 
+			if (loop_FeatureFlags != v_FeatureFlags.end())
+			{
+				auto const& first = *loop_FeatureFlags;
+				PatchMem(&GetData()->LibName, first.lib, MaxNameLength);
+				PatchMem(&GetData()->ProcName, first.symbol, MaxNameLength);
+				context.Eip = reinterpret_cast<DWORD>(&GetData()->LoadLibraryFunc);
+			}
+			else
+			{
+				bFeaturesSet = true;
+				context.Eip = reinterpret_cast<DWORD>(pcEntryPoint);
+			}
+		}
+
+		// single step mode
+		context.EFlags |= 0x100;
+		context.ContextFlags = CONTEXT_CONTROL;
+		SetThreadContext(currentThread, &context);
+
+		threadInfo.lastBP = exceptAddr;
+
+		return DBG_CONTINUE;
+	}
+
+	// SyringeEx 移植：把 SyringeFeatures::* 导出布尔在已注入的 DLL 中置为 true（特性标志协商）
+	if (bDLLsLoaded && !bFeaturesSet && loop_FeatureFlags != v_FeatureFlags.end())
+	{
+		// restore
+		PatchMem(exceptAddr, &Breakpoints[exceptAddr].original_opcode, 1);
+
+		auto const& entry = *loop_FeatureFlags;
+
+		DWORD flagAddr = 0;
+		ReadMem(&GetData()->ProcAddress, &flagAddr, 4);
+		if (flagAddr)
+		{
+			BYTE const trueVal = 1;
+			PatchMem(reinterpret_cast<void*>(flagAddr), &trueVal, 1);
+			Log::WriteLine(__FUNCTION__ ": 特性标志 %s@%s = true (0x%08X)", entry.symbol, entry.lib, flagAddr);
+		}
+		else
+		{
+			Log::WriteLine(__FUNCTION__ ": 未在 %s 中找到特性标志 %s，跳过。", entry.lib, entry.symbol);
+		}
+		++loop_FeatureFlags;
+
+		if (loop_FeatureFlags != v_FeatureFlags.end())
+		{
+			auto const& next = *loop_FeatureFlags;
+			PatchMem(&GetData()->LibName, next.lib, MaxNameLength);
+			PatchMem(&GetData()->ProcName, next.symbol, MaxNameLength);
+			context.Eip = reinterpret_cast<DWORD>(&GetData()->LoadLibraryFunc);
+		}
+		else
+		{
+			bFeaturesSet = true;
 			context.Eip = reinterpret_cast<DWORD>(pcEntryPoint);
 		}
 
@@ -2238,7 +2394,7 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 				__FUNCTION__ ": DLL \"%.*s\" 不在 -i= 白名单中，跳过。",
 				printable(fn));
 			return;
-	}
+		}
 	}
 
 	try {
