@@ -67,7 +67,8 @@ namespace
 	}
 
 	// 跑一次"命名→崩溃→报告"场景并断言
-	void RunNamingScenario(char const* targetExe)
+	// expectMain：崩溃线程是否应为进程主线程（CREATE_PROCESS 事件的初始线程）
+	void RunNamingScenario(char const* targetExe, bool const expectMain)
 	{
 		std::string exeDir, releaseDir;
 		if(!GetTestDirs(exeDir, releaseDir))
@@ -119,6 +120,7 @@ namespace
 
 		bool exceptionJsonSeen = false;
 		bool nameInJson = false;
+		bool mainFlag = false;
 		for(auto const& seg : ReadJsonSegments("tests_syringe.log"))
 		{
 			auto* const obj = cJSON_Parse(seg.c_str());
@@ -130,13 +132,26 @@ namespace
 				exceptionJsonSeen = true;
 			if(type && type->valuestring && strcmp(type->valuestring, "thread") == 0 &&
 				name && name->valuestring && strcmp(name->valuestring, "CrashWorker") == 0)
+			{
 				nameInJson = true;
+				auto* const main = cJSON_GetObjectItem(obj, "main");
+				if(main && main->type == cJSON_True) mainFlag = true;
+			}
 			cJSON_Delete(obj);
 		}
 		CHECK(exceptionJsonSeen);
 		CHECK(nameInJson);
 		CHECK(logText.find("异常线程ID = ") != std::string::npos);
-		CHECK(logText.find("（CrashWorker）") != std::string::npos);
+		if(expectMain)
+		{
+			CHECK(mainFlag);
+			CHECK(logText.find("（CrashWorker，主线程）") != std::string::npos);
+		}
+		else
+		{
+			CHECK(!mainFlag);
+			CHECK(logText.find("（CrashWorker）") != std::string::npos);
+		}
 
 		DeleteFileA("tests_syringe.log");
 		SetCurrentDirectoryA(oldCwd);
@@ -145,10 +160,12 @@ namespace
 
 TEST_CASE(threadname_hybrid_layout)
 {
-	RunNamingScenario("nametest.exe");
+	// nametest.exe 在主线程命名并崩溃 → 崩溃线程即主线程
+	RunNamingScenario("nametest.exe", true);
 }
 
 TEST_CASE(threadname_msvc_canonical_layout)
 {
-	RunNamingScenario("nametest_std.exe");
+	// nametest_std.exe 在工作线程命名并崩溃 → 崩溃线程非主线程
+	RunNamingScenario("nametest_std.exe", false);
 }

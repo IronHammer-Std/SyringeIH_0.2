@@ -1311,7 +1311,7 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 
 	{
 		InfoHandler.AddString(__FUNCTION__ ": 异常线程ID = %u（%s）",
-			dbgEvent.dwThreadId, ThreadDisplayName(dbgEvent.dwThreadId).c_str());
+			dbgEvent.dwThreadId, ThreadDisplayLabel(dbgEvent.dwThreadId).c_str());
 		InfoHandler.AddString(__FUNCTION__ ": ExceptionFlags = %08X", rcd.ExceptionFlags);
 		InfoHandler.AddString(__FUNCTION__ ": 共 %d 个参数", rcd.NumberParameters);
 		for (DWORD i = 0; i < rcd.NumberParameters; ++i)
@@ -1572,7 +1572,7 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 		EmitThreadReportSegment(seq, tid, "snapshot", nullptr);
 
 		InfoHandler.Tag = "thread:" + std::to_string(tid);
-		InfoHandler.AddString(__FUNCTION__ ": 线程 ID = %u（%s）：", tid, ThreadDisplayName(tid).c_str());
+		InfoHandler.AddString(__FUNCTION__ ": 线程 ID = %u（%s）：", tid, ThreadDisplayLabel(tid).c_str());
 		DumpThreadStack(tid, info.Thread);
 		InfoHandler.Flush(); // 每线程立即落盘，保证 JSON 段与 TEXT 段紧邻
 	}
@@ -1696,6 +1696,7 @@ void SyringeDebugger::EmitProcessReportSegment(DWORD const seq)
 	cJSON_AddNumberToObject(syringe, "protocol", static_cast<double>(SNAPSHOT_PROTOCOL_VERSION));
 
 	cJSON_AddNumberToObject(root, "pid", static_cast<double>(pInfo.dwProcessId));
+	cJSON_AddNumberToObject(root, "main_tid", static_cast<double>(MainThreadId));
 	cJSON_AddStringToObject(root, "exe", exeName.c_str());
 	cJSON_AddStringToObject(root, "path", exePath.c_str());
 	cJSON_AddStringToObject(root, "image_base", HexString(ExeImageBase).c_str());
@@ -1779,6 +1780,8 @@ void SyringeDebugger::EmitThreadReportSegment(
 	cJSON_AddStringToObject(root, "group", group);
 	cJSON_AddNumberToObject(root, "seq", static_cast<double>(seq));
 	cJSON_AddNumberToObject(root, "tid", static_cast<double>(tid));
+	// main：是否主线程（主线程 = CREATE_PROCESS 调试事件报告的初始线程）
+	cJSON_AddBoolToObject(root, "main", tid == MainThreadId);
 
 	// name：0x406D1388 命名机制登记的线程名；未命名时填“来自 xxx 的线程”
 	// source：线程来源（入口点经 AnalyzeAddr 解析出的模块名）
@@ -1921,6 +1924,17 @@ std::string SyringeDebugger::ThreadDisplayName(DWORD const tid)
 	auto const source = ThreadSourceModule(tid);
 	if(!source.empty()) return "来自 " + source + " 的线程";
 	return "未命名线程";
+}
+
+// 文本转储用的线程标签：显示名 + 主线程后缀
+std::string SyringeDebugger::ThreadDisplayLabel(DWORD const tid)
+{
+	auto label = ThreadDisplayName(tid);
+	if(tid == MainThreadId)
+	{
+		label += "，主线程";
+	}
+	return label;
 }
 
 void SyringeDebugger::PreloadData()
@@ -2632,6 +2646,10 @@ void SyringeDebugger::Run(std::string_view const arguments)
 			pInfo.dwThreadId = dbgEvent.dwProcessId;
 			pInfo.hThread = dbgEvent.u.CreateProcessInfo.hThread;
 			pInfo.dwThreadId = dbgEvent.dwThreadId;
+			// 主线程 = 进程创建时的初始线程（CREATE_PROCESS 事件保证先于一切 CREATE_THREAD）
+			MainThreadId = dbgEvent.dwThreadId;
+			Log::WriteLine(__FUNCTION__ ": 进程创建：游戏PID = %u，主线程TID = %u。",
+				dbgEvent.dwProcessId, dbgEvent.dwThreadId);
 			Threads.emplace(
 				std::piecewise_construct,
 				std::forward_as_tuple(dbgEvent.dwThreadId),

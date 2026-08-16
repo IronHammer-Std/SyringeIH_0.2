@@ -54,18 +54,19 @@ BEGIN/END 标记之间的、以 `{` 开头的行即 JSON；`TEXT` 段内为原�
 ### 段 Schema（字段集固定，缺数据填 `null`；地址为 `"0x%08X"` 字符串，计数/字节为数字）
 
 - **process 段**（每次快照一个，`group:"snapshot"`）：`format/type/group/seq/epoch_ms/time/trigger`、
-  `syringe{pid,version,protocol}`、`pid/exe/path/image_base/image_size/exe_timestamp/crc`、
+  `syringe{pid,version,protocol}`、`pid/main_tid/exe/path/image_base/image_size/exe_timestamp/crc`、
   `uptime_ms/cpu{user_ms,kernel_ms}/memory{working_set,pagefile,peak_working_set}`、
   `handle_count/thread_count/module_count`、`phase{hooks_created,everything_ok}`、
-  `modules[{name,path,base,size}]`。
+  `modules[{name,path,base,size}]`（`main_tid` = 主线程 TID，即进程初始线程）。
 - **thread 段**（快照=每线程一个 `group:"snapshot"`；异常=仅出错线程一个 `group:"exception"`）：
-  `format/type/group/seq/tid`、`name`（0x406D1388 命名机制登记的线程名；未命名时填
+  `format/type/group/seq/tid`、`main`（bool，是否主线程——主线程 = CREATE_PROCESS 调试事件报告的初始线程）、
+  `name`（0x406D1388 命名机制登记的线程名；未命名时填
   `"来自 {模块} 的线程"`）、`source`（线程来源 = 入口点经 AnalyzeAddr 解析出的模块名，
   无法解析时为 null）、`start{addr,module,offset}`（线程起始地址，来自
   `CREATE_THREAD_DEBUG_EVENT.lpStartAddress`）、`context{eax..edi,eip,esp,ebp,eflags}`
   （仅寄存器指针，**栈信息不进 JSON**）；异常段另附 `exception{code,addr,flags,params[],
   access,fault_addr}`（access/fault_addr 仅访问违例时出现）。
-  文本转储中，线程 ID 之后同样标注显示名（如 `线程 ID = 48908（来自 ntdll.dll 的线程）：`）。
+  文本转储中，线程 ID 之后同样标注显示名（如 `线程 ID = 48908（来自 ntdll.dll 的线程，主线程）：`）。
 
 ### skill 提取规则
 
