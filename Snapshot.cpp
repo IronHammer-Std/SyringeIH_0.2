@@ -127,6 +127,15 @@ char const* SelectLogFile(std::string_view const arguments)
 		: "syringe.log";
 }
 
+void WriteReportSegment(char const* const type, char const* const key, char const* const jsonText)
+{
+	auto const begin = "@@SyringeIH:JSON:BEGIN:" + std::string(type) + ":" + key + "@@";
+	auto const end = "@@SyringeIH:JSON:END:" + std::string(type) + ":" + key + "@@";
+	Log::WriteRaw(begin.c_str());
+	Log::WriteRaw(jsonText);
+	Log::WriteRaw(end.c_str());
+}
+
 DWORD SnapshotBroadcast()
 {
 	Log::WriteLine(__FUNCTION__ ": 正在枚举 Syringe 进程……");

@@ -32,6 +32,45 @@ SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=
   `syringe.log`），随后退出（成功返回 0）。
 - 另新增 JSON 设置项 **`WaitForProcessExit`**（默认 true）。
 
+## 快照 / 异常报告格式（skill 接口）v1
+
+目标 SyringeIH 会在自己的 `syringe.log` 中输出结构化报告段（`format = syringeih.report.v1`），
+供下游 skill / AI agent 解析。栈转储文本**不结构化**（外部 DLL 可在其中夹带任意注释，
+如 IHInspector 行、钩子信息），因此报告 = 结构化 JSON 段（固定字段契约）+ 原样文本转储段。
+
+### 标记语法（标记行与 JSON 行不带时间戳，独占一行）
+
+```
+@@SyringeIH:JSON:BEGIN:process:{seq}@@      @@SyringeIH:JSON:END:process:{seq}@@
+@@SyringeIH:JSON:BEGIN:thread:{tid}@@       @@SyringeIH:JSON:END:thread:{tid}@@
+@@SyringeIH:TEXT:BEGIN:thread:{tid}@@       @@SyringeIH:TEXT:END:thread:{tid}@@
+```
+
+识别正则：`^@@SyringeIH:(JSON|TEXT):(BEGIN|END):(process|thread):(\d+)@@$`。
+BEGIN/END 标记之间的、以 `{` 开头的行即 JSON；`TEXT` 段内为原样栈转储（含夹带，不解析）。
+`seq` 为快照/异常共用的事件序号，同一事件的所有段共享同一 seq；线程按 TID 升序、
+模块按基址升序输出。
+
+### 段 Schema（字段集固定，缺数据填 `null`；地址为 `"0x%08X"` 字符串，计数/字节为数字）
+
+- **process 段**（每次快照一个，`group:"snapshot"`）：`format/type/group/seq/epoch_ms/time/trigger`、
+  `syringe{pid,version,protocol}`、`pid/exe/path/image_base/image_size/exe_timestamp/crc`、
+  `uptime_ms/cpu{user_ms,kernel_ms}/memory{working_set,pagefile,peak_working_set}`、
+  `handle_count/thread_count/module_count`、`phase{hooks_created,everything_ok}`、
+  `modules[{name,path,base,size}]`。
+- **thread 段**（快照=每线程一个 `group:"snapshot"`；异常=仅出错线程一个 `group:"exception"`）：
+  `format/type/group/seq/tid`、`start{addr,module,offset}`（线程起始地址，
+  来自 `CREATE_THREAD_DEBUG_EVENT.lpStartAddress`）、`context{eax..edi,eip,esp,ebp,eflags}`
+  （仅寄存器指针，**栈信息不进 JSON**）；异常段另附 `exception{code,addr,flags,params[],
+  access,fault_addr}`（access/fault_addr 仅访问违例时出现）。
+
+### skill 提取规则
+
+```
+grep '@@SyringeIH:.*BEGIN' syringe.log             # 编目（全部段）
+某线程 JSON = BEGIN/END 间以 { 开头的行；线程文本附件 = TEXT:BEGIN/END 之间的所有行
+```
+
 ## Feature Flags（特性协商）
 
 SDK 头：`include/Syringe.h`（供被注入 DLL 使用；REGISTERS 布局、握手结构、`DEFINE_HOOK`/`declhook`

@@ -42,6 +42,15 @@ void Log::Close() noexcept
 	File.clear();
 }
 
+void Log::WriteRaw(char const* const pText) noexcept
+{
+	if(File) {
+		fputs(pText, File);
+		fputc('\n', File);
+		fflush(File);
+	}
+}
+
 void Log::WriteTimestamp() noexcept
 {
 	if(File) {

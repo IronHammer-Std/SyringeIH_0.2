@@ -56,6 +56,10 @@ struct SnapshotScopeGuard
 // 广播侧：一轮广播，返回进程退出码（0 = 成功）
 DWORD SnapshotBroadcast();
 
+// 报告编目：以无时间戳直写输出一个 JSON 段（BEGIN 标记行 / JSON 行 / END 标记行）
+// type: "process" | "thread"；key: 进程段用 seq、线程段用 tid 的十进制串
+void WriteReportSegment(char const* type, char const* key, char const* jsonText);
+
 // Main 的日志文件选择：在解析 flags/JSON 之前做轻量预扫描
 // （误判由 Main 在最终配置确定后的权威切换兜底）
 bool CommandLineRequestsSnapshot(std::string_view arguments);

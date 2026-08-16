@@ -23,6 +23,11 @@ struct ProcessedDumpInfoHandler
 {
 	std::vector<ProcessedDumpInfoEntry> Entries;
 
+	// 报告编目：Flush 时若有内容，则在输出前后加
+	// @@SyringeIH:TEXT:BEGIN:{Tag}@@ / @@SyringeIH:TEXT:END:{Tag}@@
+	// 标记行；空则什么都不输出。默认空 Tag = 行为与旧版完全一致。
+	std::string Tag;
+
 public:
 	void AddString()
 	{

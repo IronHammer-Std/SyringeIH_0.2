@@ -48,12 +48,24 @@ void ProcessedDumpInfoHandler::AddString(char const* pFormat, ...)
 void ProcessedDumpInfoHandler::Clear()
 {
     Entries.clear();
+    Tag.clear();
 }
 
 void ProcessedDumpInfoHandler::Flush()
 {
-    //Log::WriteLine(__FUNCTION__ ": Flushed.");
-    //Log::WriteLine(__FUNCTION__ ": BEGIN FLUSH LINES ===================================");
+    // 空内容 → 不输出任何东西（含标记）；避免残留 Tag 影响下一次输出
+    if (Entries.empty())
+    {
+        Tag.clear();
+        return;
+    }
+
+    // 报告编目：文本转储段的头尾标记（无时间戳直写，与 JSON 段同源规则）
+    if (!Tag.empty())
+    {
+        Log::WriteRaw(("@@SyringeIH:TEXT:BEGIN:" + Tag + "@@").c_str());
+    }
+
     for (const auto& entry : Entries) {
         std::visit([](const auto& e) {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, ProcessedDumpInfoEntry_String>) {
@@ -77,8 +89,14 @@ void ProcessedDumpInfoHandler::Flush()
             }
             }, entry);
     }
+
+    if (!Tag.empty())
+    {
+        Log::WriteRaw(("@@SyringeIH:TEXT:END:" + Tag + "@@").c_str());
+    }
+
     Entries.clear();
-    //Log::WriteLine(__FUNCTION__ ": END FLUSH LINES ===================================");
+    Tag.clear();
 }
 
 void ProcessedDumpInfoHandler::Fillin(const std::vector<std::string> DescStr)

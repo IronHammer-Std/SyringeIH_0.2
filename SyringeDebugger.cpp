@@ -9,10 +9,28 @@
 #include "SymMap.h"
 #include "Shlwapi.h"
 #include "Snapshot.h"
+#include "cJSON.h"
+
+// 旧版 cJSON 兼容辅助（本仓库 cJSON 的 AddItemToObject 返回 void，free 名为 cJSON_Free）
+inline cJSON* JsonAddObject(cJSON* object, char const* name)
+{
+	cJSON* const child = cJSON_CreateObject();
+	cJSON_AddItemToObject(object, name, child);
+	return child;
+}
+
+inline cJSON* JsonAddArray(cJSON* object, char const* name)
+{
+	cJSON* const child = cJSON_CreateArray();
+	cJSON_AddItemToObject(object, name, child);
+	return child;
+}
 
 #include <algorithm>
 #include <filesystem>
 #include <array>
+#include <chrono>
+#include <ctime>
 #include <fstream>
 #include <memory>
 #include <numeric>
@@ -1281,6 +1299,14 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 
 	InitializeSymbols();
 
+	// 报告编目：与快照同构的 thread JSON 段（group=exception），
+	// 文本转储原样保留，经 InfoHandler.Tag 包上 TEXT 头尾标记。
+	{
+		auto const seq = ++ReportEventSeq;
+		EmitThreadReportSegment(seq, dbgEvent.dwThreadId, "exception", &dbgEvent);
+		InfoHandler.Tag = "thread:" + std::to_string(dbgEvent.dwThreadId);
+	}
+
 	{
 		InfoHandler.AddString(__FUNCTION__ ": 异常线程ID = %u", dbgEvent.dwThreadId);
 		InfoHandler.AddString(__FUNCTION__ ": ExceptionFlags = %08X", rcd.ExceptionFlags);
@@ -1501,21 +1527,52 @@ bool SyringeDebugger::IsSnapshotBreakin(DEBUG_EVENT const& dbgEvent)
 	return exceptAddr >= breakPointAddr - 1 && exceptAddr <= breakPointAddr + 1;
 }
 
-// 快照处理：此时被调试进程已被调试系统整体挂起，
-// 遍历 Threads 输出每个线程的栈快照，随后清理 breakin 僵尸线程
+// 快照处理：此时被调试进程已被调试系统整体挂起。
+// 编目输出：人读摘要 → process JSON 段 → 每线程 [ thread JSON 段 → TEXT 转储段（紧邻）]，
+// 随后清理 breakin 僵尸线程。
 DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 {
 	(void)dbgEvent;
 
 	Log::WriteLine(__FUNCTION__ ": 收到快照请求，输出全部线程栈快照……");
 	InitializeSymbols();
+
+	auto const seq = ++ReportEventSeq;
+
+	// 人读摘要（力求简洁）：非 breakin 线程的 TID 与 EIP
+	std::vector<std::pair<DWORD, DWORD>> tidEip;
+	for(auto const& [tid, info] : Threads)
+	{
+		if(tid == SnapshotBreakinThreadId) continue;
+		CONTEXT ctx{};
+		ctx.ContextFlags = CONTEXT_CONTROL;
+		auto const eip = GetThreadContext(info.Thread, &ctx) ? ctx.Eip : 0u;
+		tidEip.emplace_back(tid, eip);
+	}
+	{
+		std::string summary = "快照 #" + std::to_string(seq) + "：" + std::to_string(tidEip.size()) + " 线程";
+		for(auto const& [tid, eip] : tidEip)
+		{
+			char buf[40];
+			sprintf_s(buf, " | TID %u @ 0x%08X", tid, eip);
+			summary += buf;
+		}
+		Log::WriteLine("%s", summary.c_str());
+	}
+
+	EmitProcessReportSegment(seq);
+
 	for(auto const& [tid, info] : Threads)
 	{
 		if(tid == SnapshotBreakinThreadId) continue; // breakin 线程自身栈无意义
+
+		EmitThreadReportSegment(seq, tid, "snapshot", nullptr);
+
+		InfoHandler.Tag = "thread:" + std::to_string(tid);
 		InfoHandler.AddString(__FUNCTION__ ": 线程 ID = %u：", tid);
 		DumpThreadStack(tid, info.Thread);
+		InfoHandler.Flush(); // 每线程立即落盘，保证 JSON 段与 TEXT 段紧邻
 	}
-	InfoHandler.Flush();
 
 	// 清理僵尸 breakin 线程：先终止再继续事件，避免其短暂复活
 	if(auto const it = Threads.find(SnapshotBreakinThreadId); it != Threads.end())
@@ -1527,6 +1584,283 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 	SnapshotBreakinThreadId = 0;
 	Log::WriteLine(__FUNCTION__ ": 栈快照输出完成。");
 	return DBG_CONTINUE;
+}
+
+// ============ 报告编目（syringeih.report.v1） ============
+
+namespace
+{
+	struct RemoteModuleEntry
+	{
+		std::string name;
+		std::string path;
+		DWORD base;
+		DWORD size;
+	};
+
+	std::string HexString(DWORD const value)
+	{
+		char buf[16];
+		sprintf_s(buf, "0x%08X", value);
+		return buf;
+	}
+
+	int64_t FileTimeToUnixMs(FILETIME const& ft)
+	{
+		ULARGE_INTEGER u{ ft.dwLowDateTime, ft.dwHighDateTime };
+		return static_cast<int64_t>((u.QuadPart - 116444736000000000LL) / 10000);
+	}
+
+	std::vector<RemoteModuleEntry> CollectRemoteModules(HANDLE const hProcess)
+	{
+		std::vector<RemoteModuleEntry> ret;
+		HMODULE mods[512]{};
+		DWORD needed = 0;
+		if(!EnumProcessModules(hProcess, mods, sizeof(mods), &needed)) return ret;
+
+		auto const count = (std::min)(needed / sizeof(HMODULE), DWORD(_countof(mods)));
+		for(DWORD i = 0; i < count; ++i)
+		{
+			MODULEINFO mi{};
+			char path[MAX_PATH]{};
+			if(!GetModuleInformation(hProcess, mods[i], &mi, sizeof(mi))) continue;
+			if(!GetModuleFileNameExA(hProcess, mods[i], path, MAX_PATH)) continue;
+
+			RemoteModuleEntry e;
+			e.base = reinterpret_cast<DWORD>(mi.lpBaseOfDll);
+			e.size = static_cast<DWORD>(mi.SizeOfImage);
+			e.path = path;
+			e.name = PathFindFileNameA(path);
+			ret.push_back(std::move(e));
+		}
+		std::sort(ret.begin(), ret.end(),
+			[](RemoteModuleEntry const& l, RemoteModuleEntry const& r) { return l.base < r.base; });
+		return ret;
+	}
+}
+
+void SyringeDebugger::EmitProcessReportSegment(DWORD const seq)
+{
+	auto const modules = CollectRemoteModules(pInfo.hProcess);
+
+	PROCESS_MEMORY_COUNTERS pmc{ sizeof(pmc) };
+	GetProcessMemoryInfo(pInfo.hProcess, &pmc, sizeof(pmc));
+
+	DWORD handleCount = 0;
+	GetProcessHandleCount(pInfo.hProcess, &handleCount);
+
+	FILETIME createFt{}, exitFt{}, kernelFt{}, userFt{};
+	GetProcessTimes(pInfo.hProcess, &createFt, &exitFt, &kernelFt, &userFt);
+
+	auto const nowMs = static_cast<int64_t>(
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::system_clock::now().time_since_epoch()).count());
+	auto const createMs = FileTimeToUnixMs(createFt);
+	auto const uptimeMs = createMs > 0 ? (nowMs - createMs) : 0;
+
+	char timeBuf[32]{};
+	{
+		auto const t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+		tm local{};
+		localtime_s(&local, &t);
+		strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &local);
+	}
+
+	std::string exeName, exePath;
+	if(!modules.empty())
+	{
+		exeName = modules.front().name;
+		exePath = modules.front().path;
+	}
+	else
+	{
+		exeName = exe;
+		exePath = exe;
+	}
+
+	cJSON* const root = cJSON_CreateObject();
+	cJSON_AddStringToObject(root, "format", "syringeih.report.v1");
+	cJSON_AddStringToObject(root, "type", "process");
+	cJSON_AddStringToObject(root, "group", "snapshot");
+	cJSON_AddNumberToObject(root, "seq", static_cast<double>(seq));
+	cJSON_AddNumberToObject(root, "epoch_ms", static_cast<double>(nowMs));
+	cJSON_AddStringToObject(root, "time", timeBuf);
+	cJSON_AddStringToObject(root, "trigger", "debug-breakin");
+
+	cJSON* const syringe = JsonAddObject(root, "syringe");
+	cJSON_AddNumberToObject(syringe, "pid", static_cast<double>(GetCurrentProcessId()));
+	cJSON_AddStringToObject(syringe, "version", PRODUCT_VERSION_STR);
+	cJSON_AddNumberToObject(syringe, "protocol", static_cast<double>(SNAPSHOT_PROTOCOL_VERSION));
+
+	cJSON_AddNumberToObject(root, "pid", static_cast<double>(pInfo.dwProcessId));
+	cJSON_AddStringToObject(root, "exe", exeName.c_str());
+	cJSON_AddStringToObject(root, "path", exePath.c_str());
+	cJSON_AddStringToObject(root, "image_base", HexString(ExeImageBase).c_str());
+	cJSON_AddNumberToObject(root, "image_size", static_cast<double>(dwExeSize));
+	cJSON_AddNumberToObject(root, "exe_timestamp", static_cast<double>(dwTimeStamp));
+	cJSON_AddStringToObject(root, "crc", HexString(dwExeCRC).c_str());
+
+	cJSON_AddNumberToObject(root, "uptime_ms", static_cast<double>(uptimeMs));
+	cJSON* const cpu = JsonAddObject(root, "cpu");
+	cJSON_AddNumberToObject(cpu, "user_ms", static_cast<double>(FileTimeToUnixMs(userFt)));
+	cJSON_AddNumberToObject(cpu, "kernel_ms", static_cast<double>(FileTimeToUnixMs(kernelFt)));
+
+	cJSON* const memory = JsonAddObject(root, "memory");
+	cJSON_AddNumberToObject(memory, "working_set", static_cast<double>(pmc.WorkingSetSize));
+	cJSON_AddNumberToObject(memory, "pagefile", static_cast<double>(pmc.PagefileUsage));
+	cJSON_AddNumberToObject(memory, "peak_working_set", static_cast<double>(pmc.PeakWorkingSetSize));
+
+	cJSON_AddNumberToObject(root, "handle_count", static_cast<double>(handleCount));
+	auto const threadCount = Threads.size() -
+		(SnapshotBreakinThreadId && Threads.count(SnapshotBreakinThreadId) ? 1u : 0u);
+	cJSON_AddNumberToObject(root, "thread_count", static_cast<double>(threadCount));
+	cJSON_AddNumberToObject(root, "module_count", static_cast<double>(modules.size()));
+
+	cJSON* const phase = JsonAddObject(root, "phase");
+	cJSON_AddBoolToObject(phase, "hooks_created", bHooksCreated);
+	cJSON_AddBoolToObject(phase, "everything_ok", EverythingIsOK);
+
+	cJSON* const mods = JsonAddArray(root, "modules");
+	for(auto const& m : modules)
+	{
+		cJSON* const e = cJSON_CreateObject();
+		cJSON_AddStringToObject(e, "name", m.name.c_str());
+		cJSON_AddStringToObject(e, "path", m.path.c_str());
+		cJSON_AddStringToObject(e, "base", HexString(m.base).c_str());
+		cJSON_AddNumberToObject(e, "size", static_cast<double>(m.size));
+		cJSON_AddItemToArray(mods, e);
+	}
+
+	char* const text = cJSON_PrintUnformatted(root);
+	if(text)
+	{
+		WriteReportSegment("process", std::to_string(seq).c_str(), text);
+		cJSON_Free(text);
+	}
+	cJSON_Delete(root);
+}
+
+void SyringeDebugger::EmitThreadReportSegment(
+	DWORD const seq, DWORD const tid, char const* const group, DEBUG_EVENT const* const pException)
+{
+	auto const modules = CollectRemoteModules(pInfo.hProcess);
+	auto const resolveModule = [&modules](DWORD const addr) -> RemoteModuleEntry const*
+	{
+		if(modules.empty()) return nullptr;
+		size_t lo = 0, hi = modules.size();
+		while(lo + 1 < hi)
+		{
+			auto const mid = (lo + hi) / 2;
+			if(modules[mid].base <= addr) lo = mid;
+			else hi = mid;
+		}
+		if(addr >= modules[lo].base && addr < modules[lo].base + modules[lo].size) return &modules[lo];
+		return nullptr;
+	};
+
+	HANDLE hThread = nullptr;
+	LPVOID startAddr = nullptr;
+	if(auto const it = Threads.find(tid); it != Threads.end())
+	{
+		hThread = it->second.Thread;
+		startAddr = it->second.StartAddress;
+	}
+
+	CONTEXT ctx{};
+	ctx.ContextFlags = CONTEXT_FULL;
+	auto const hasCtx = hThread != nullptr && GetThreadContext(hThread, &ctx) != FALSE;
+
+	cJSON* const root = cJSON_CreateObject();
+	cJSON_AddStringToObject(root, "format", "syringeih.report.v1");
+	cJSON_AddStringToObject(root, "type", "thread");
+	cJSON_AddStringToObject(root, "group", group);
+	cJSON_AddNumberToObject(root, "seq", static_cast<double>(seq));
+	cJSON_AddNumberToObject(root, "tid", static_cast<double>(tid));
+
+	// start：线程“创建者”线索（调试事件的 lpStartAddress 解析到模块+偏移）
+	{
+		cJSON* const start = JsonAddObject(root, "start");
+		if(startAddr)
+		{
+			auto const d = reinterpret_cast<DWORD>(startAddr);
+			cJSON_AddStringToObject(start, "addr", HexString(d).c_str());
+			if(auto const* mod = resolveModule(d))
+			{
+				cJSON_AddStringToObject(start, "module", mod->name.c_str());
+				cJSON_AddStringToObject(start, "offset", HexString(d - mod->base).c_str());
+			}
+			else
+			{
+				cJSON_AddNullToObject(start, "module");
+				cJSON_AddNullToObject(start, "offset");
+			}
+		}
+		else
+		{
+			cJSON_AddNullToObject(start, "addr");
+			cJSON_AddNullToObject(start, "module");
+			cJSON_AddNullToObject(start, "offset");
+		}
+	}
+
+	// context：仅寄存器指针；栈信息不进 JSON（保留在 TEXT 转储段）
+	{
+		cJSON* const context = JsonAddObject(root, "context");
+		if(hasCtx)
+		{
+			cJSON_AddStringToObject(context, "eax", HexString(ctx.Eax).c_str());
+			cJSON_AddStringToObject(context, "ebx", HexString(ctx.Ebx).c_str());
+			cJSON_AddStringToObject(context, "ecx", HexString(ctx.Ecx).c_str());
+			cJSON_AddStringToObject(context, "edx", HexString(ctx.Edx).c_str());
+			cJSON_AddStringToObject(context, "esi", HexString(ctx.Esi).c_str());
+			cJSON_AddStringToObject(context, "edi", HexString(ctx.Edi).c_str());
+			cJSON_AddStringToObject(context, "eip", HexString(ctx.Eip).c_str());
+			cJSON_AddStringToObject(context, "esp", HexString(ctx.Esp).c_str());
+			cJSON_AddStringToObject(context, "ebp", HexString(ctx.Ebp).c_str());
+			cJSON_AddStringToObject(context, "eflags", HexString(ctx.EFlags).c_str());
+		}
+		else
+		{
+			for(auto const* f : { "eax", "ebx", "ecx", "edx", "esi", "edi", "eip", "esp", "ebp", "eflags" })
+			{
+				cJSON_AddNullToObject(context, f);
+			}
+		}
+	}
+
+	// 异常路径附带的崩溃信息（group=exception）
+	if(pException)
+	{
+		auto const& rcd = pException->u.Exception.ExceptionRecord;
+		cJSON* const exc = JsonAddObject(root, "exception");
+		cJSON_AddStringToObject(exc, "code", HexString(rcd.ExceptionCode).c_str());
+		cJSON_AddStringToObject(exc, "addr", HexString(reinterpret_cast<DWORD>(rcd.ExceptionAddress)).c_str());
+		cJSON_AddNumberToObject(exc, "flags", static_cast<double>(rcd.ExceptionFlags));
+		cJSON* const params = JsonAddArray(exc, "params");
+		for(DWORD i = 0; i < rcd.NumberParameters; ++i)
+		{
+			cJSON_AddItemToArray(params,
+				cJSON_CreateString(HexString(static_cast<DWORD>(rcd.ExceptionInformation[i])).c_str()));
+		}
+		if(rcd.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && rcd.NumberParameters >= 2)
+		{
+			char const* access =
+				rcd.ExceptionInformation[0] == 0 ? "read" :
+				rcd.ExceptionInformation[0] == 1 ? "write" :
+				rcd.ExceptionInformation[0] == 8 ? "execute" : "unknown";
+			cJSON_AddStringToObject(exc, "access", access);
+			cJSON_AddStringToObject(exc, "fault_addr",
+				HexString(static_cast<DWORD>(rcd.ExceptionInformation[1])).c_str());
+		}
+	}
+
+	char* const text = cJSON_PrintUnformatted(root);
+	if(text)
+	{
+		WriteReportSegment("thread", std::to_string(tid).c_str(), text);
+		cJSON_Free(text);
+	}
+	cJSON_Delete(root);
 }
 
 void SyringeDebugger::PreloadData()
@@ -2165,12 +2499,22 @@ void SyringeDebugger::Run(std::string_view const arguments)
 			pInfo.dwThreadId = dbgEvent.dwProcessId;
 			pInfo.hThread = dbgEvent.u.CreateProcessInfo.hThread;
 			pInfo.dwThreadId = dbgEvent.dwThreadId;
-			Threads.emplace(dbgEvent.dwThreadId, dbgEvent.u.CreateProcessInfo.hThread);
+			Threads.emplace(
+				std::piecewise_construct,
+				std::forward_as_tuple(dbgEvent.dwThreadId),
+				std::forward_as_tuple(
+					dbgEvent.u.CreateProcessInfo.hThread,
+					reinterpret_cast<LPVOID>(dbgEvent.u.CreateProcessInfo.lpStartAddress)));
 			CloseHandle(dbgEvent.u.CreateProcessInfo.hFile);
 			break;
 
 		case CREATE_THREAD_DEBUG_EVENT:
-			Threads.emplace(dbgEvent.dwThreadId, dbgEvent.u.CreateThread.hThread);
+			Threads.emplace(
+				std::piecewise_construct,
+				std::forward_as_tuple(dbgEvent.dwThreadId),
+				std::forward_as_tuple(
+					dbgEvent.u.CreateThread.hThread,
+					reinterpret_cast<LPVOID>(dbgEvent.u.CreateThread.lpStartAddress)));
 			if(IsRemoteBreakinStart(dbgEvent.u.CreateThread.lpStartAddress)) {
 				SnapshotBreakinThreadId = dbgEvent.dwThreadId;
 				Log::WriteLine(__FUNCTION__ ": 检测到快照 breakin 线程 %u。", dbgEvent.dwThreadId);

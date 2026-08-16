@@ -158,6 +158,14 @@ public:
 	bool IsSnapshotBreakin(DEBUG_EVENT const& dbgEvent);
 	DWORD DebuggeeModuleBase(char const* moduleName);
 
+	// 报告编目（syringeih.report.v1）：JSON 段与文本转储段（TEXT 标记见
+	// ProcessedDumpInfoHandler::Tag）。seq 为快照/异常共用的事件序号，
+	// 同一事件的所有段共享同一 seq。
+	DWORD ReportEventSeq{ 0 };
+	void EmitProcessReportSegment(DWORD seq);
+	void EmitThreadReportSegment(
+		DWORD seq, DWORD tid, char const* group, DEBUG_EVENT const* pException);
+
 	// gamemd.edb 崩溃数据库（Phobos/Vinifera 共享格式）：
 	// 0xADDRESS,canContinue,ignore,description，异常地址精确命中时在
 	// 堆栈转储（Handle_StackDump）标题正下方输出描述。
@@ -199,8 +207,14 @@ public:
 			: Thread{hThread}
 		{ }
 
+		ThreadInfo(HANDLE hThread, LPVOID startAddress) noexcept
+			: Thread{hThread}, StartAddress{startAddress}
+		{ }
+
 		ThreadHandle Thread;
 		LPVOID lastBP{ nullptr };
+		// CREATE_PROCESS/CREATE_THREAD 调试事件报告的线程起始地址（“创建者”线索）
+		LPVOID StartAddress{ nullptr };
 	};
 
 	std::map<DWORD, ThreadInfo> Threads;
