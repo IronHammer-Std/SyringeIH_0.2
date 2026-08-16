@@ -12,6 +12,8 @@ private:
 public:
 	static void Open(char const* pFilename) noexcept;
 
+	static void Close() noexcept;
+
 	static void Flush() noexcept;
 
 	static void WriteLine() noexcept;

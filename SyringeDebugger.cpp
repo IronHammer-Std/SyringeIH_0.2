@@ -8,6 +8,7 @@
 #include "Setting.h"
 #include "SymMap.h"
 #include "Shlwapi.h"
+#include "Snapshot.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -1343,61 +1344,7 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 		else InfoHandler.AddString("试图访问的地址不是代码，可能为分配的内存。");
 
 
-		CONTEXT context;
-		context.ContextFlags = CONTEXT_FULL;
-		GetThreadContext(currentThread, &context);
-
-		InfoHandler.AddString();
-		InfoHandler.AddString("寄存器：");
-		InfoHandler.AddString("\tEAX = 0x%08X\tECX = 0x%08X\tEDX = 0x%08X",
-			context.Eax, context.Ecx, context.Edx);
-		InfoHandler.AddString("\tEBX = 0x%08X\tESP = 0x%08X\tEBP = 0x%08X",
-			context.Ebx, context.Esp, context.Ebp);
-		InfoHandler.AddString("\tESI = 0x%08X\tEDI = 0x%08X\tEIP = 0x%08X",
-			context.Esi, context.Edi, context.Eip);
-		InfoHandler.AddString();
-
-
-
-		InfoHandler.AddString("\t堆栈转储信息：（按可能的栈帧分段）");
-		auto const esp = reinterpret_cast<DWORD*>(context.Esp);
-		auto const eend = LongStackDump ? (DWORD*)0xFFFFFFFF : esp + 0x100;
-		for (auto p = esp; p < eend; ++p)
-		{
-			DWORD dw;
-			if (ReadMem(p, &dw, 4)) {
-				if (dw >= 0x10000 && dw <= 0xFFFF0000)
-				{
-					
-					auto [Rel1, Str1] = AnalyzeAddr(dw);
-					if (IsExecutable(pInfo.hProcess, (LPCVOID)dw))
-					{
-						if (!OnlyShowStackFrame)
-							InfoHandler.AddString();
-					}
-					else if (OnlyShowStackFrame)
-					{
-						continue;
-					}
-					InfoHandler.AddString("\t0x%08X:\t0x%08X （%s+%X）[访问权限：%s]", 
-						p, dw, Str1.c_str(), Rel1,
-						GetAccessStr(pInfo.hProcess, (LPCVOID)dw).c_str());
-					InfoHandler.AddAddr((DWORD)p, "\t");
-				}
-				else if(!OnlyShowStackFrame)
-				{
-					InfoHandler.AddString("\t0x%08X:\t0x%08X", p, dw);
-				}
-			}
-			else {
-				if (LongStackDump)
-				{
-					break;
-				}
-				InfoHandler.AddString("\t0x%08X:\t（无法读取）", p);
-			}
-		}
-		InfoHandler.AddString();
+		DumpThreadStack(dbgEvent.dwThreadId, currentThread);
 #if 0
 		InfoHandler.AddString("Making crash dump:\n");
 		MINIDUMP_EXCEPTION_INFORMATION expParam;
@@ -1441,6 +1388,145 @@ bool SyringeDebugger::Handle_StackDump(DEBUG_EVENT const& dbgEvent, bool& Skippe
 
 	return Continuable;
 
+}
+
+// 从 Handle_StackDump 抽取的单线程栈快照输出：寄存器 + ESP 扫栈（复用 AnalyzeAddr 等全部既有逻辑）
+void SyringeDebugger::DumpThreadStack(DWORD const ThreadId, HANDLE const Thread)
+{
+	(void)ThreadId;
+
+	CONTEXT context;
+	context.ContextFlags = CONTEXT_FULL;
+	GetThreadContext(Thread, &context);
+
+	InfoHandler.AddString();
+	InfoHandler.AddString("寄存器：");
+	InfoHandler.AddString("\tEAX = 0x%08X\tECX = 0x%08X\tEDX = 0x%08X",
+		context.Eax, context.Ecx, context.Edx);
+	InfoHandler.AddString("\tEBX = 0x%08X\tESP = 0x%08X\tEBP = 0x%08X",
+		context.Ebx, context.Esp, context.Ebp);
+	InfoHandler.AddString("\tESI = 0x%08X\tEDI = 0x%08X\tEIP = 0x%08X",
+		context.Esi, context.Edi, context.Eip);
+	InfoHandler.AddString();
+
+	InfoHandler.AddString("\t堆栈转储信息：（按可能的栈帧分段）");
+	auto const esp = reinterpret_cast<DWORD*>(context.Esp);
+	auto const eend = LongStackDump ? (DWORD*)0xFFFFFFFF : esp + 0x100;
+	for (auto p = esp; p < eend; ++p)
+	{
+		DWORD dw;
+		if (ReadMem(p, &dw, 4)) {
+			if (dw >= 0x10000 && dw <= 0xFFFF0000)
+			{
+				auto [Rel1, Str1] = AnalyzeAddr(dw);
+				if (IsExecutable(pInfo.hProcess, (LPCVOID)dw))
+				{
+					if (!OnlyShowStackFrame)
+						InfoHandler.AddString();
+				}
+				else if (OnlyShowStackFrame)
+				{
+					continue;
+				}
+				InfoHandler.AddString("\t0x%08X:\t0x%08X （%s+%X）[访问权限：%s]", 
+					p, dw, Str1.c_str(), Rel1,
+					GetAccessStr(pInfo.hProcess, (LPCVOID)dw).c_str());
+				InfoHandler.AddAddr((DWORD)p, "\t");
+			}
+			else if(!OnlyShowStackFrame)
+			{
+				InfoHandler.AddString("\t0x%08X:\t0x%08X", p, dw);
+			}
+		}
+		else {
+			if (LongStackDump)
+			{
+				break;
+			}
+			InfoHandler.AddString("\t0x%08X:\t（无法读取）", p);
+		}
+	}
+	InfoHandler.AddString();
+}
+
+// 被调试进程内按文件名定位模块基址（EnumProcessModules 的元素即远程模块基址）
+DWORD SyringeDebugger::DebuggeeModuleBase(char const* const moduleName)
+{
+	HMODULE mods[512]{};
+	DWORD needed = 0;
+	if(!EnumProcessModules(pInfo.hProcess, mods, sizeof(mods), &needed)) return 0;
+
+	auto const count = (std::min)(needed / sizeof(HMODULE), DWORD(_countof(mods)));
+	char path[MAX_PATH]{};
+	for(DWORD i = 0; i < count; ++i)
+	{
+		if(!GetModuleFileNameExA(pInfo.hProcess, mods[i], path, MAX_PATH)) continue;
+		if(_stricmp(PathFindFileNameA(path), moduleName) != 0) continue;
+		return reinterpret_cast<DWORD>(mods[i]);
+	}
+	return 0;
+}
+
+// DebugBreakProcess 在被调试进程内创建的远程线程，入口是 ntdll!DbgUiRemoteBreakin
+bool SyringeDebugger::IsRemoteBreakinStart(void* const lpStartAddress)
+{
+	if(!lpStartAddress) return false;
+
+	static auto const ntdll = reinterpret_cast<DWORD>(GetModuleHandleW(L"ntdll.dll"));
+	static auto const breakin = ntdll
+		? reinterpret_cast<DWORD>(GetProcAddress(reinterpret_cast<HMODULE>(ntdll), "DbgUiRemoteBreakin"))
+		: 0u;
+	if(!ntdll || !breakin) return false;
+
+	auto const base = DebuggeeModuleBase("ntdll.dll");
+	return base && reinterpret_cast<DWORD>(lpStartAddress) == base + (breakin - ntdll);
+}
+
+// 快照打断判定：线程是 breakin 线程，且断点异常落在被调试进程 ntdll 的 DbgBreakPoint
+bool SyringeDebugger::IsSnapshotBreakin(DEBUG_EVENT const& dbgEvent)
+{
+	if(!SnapshotBreakinThreadId || dbgEvent.dwThreadId != SnapshotBreakinThreadId) return false;
+
+	static auto const ntdll = reinterpret_cast<DWORD>(GetModuleHandleW(L"ntdll.dll"));
+	static auto const breakPoint = ntdll
+		? reinterpret_cast<DWORD>(GetProcAddress(reinterpret_cast<HMODULE>(ntdll), "DbgBreakPoint"))
+		: 0u;
+	if(!ntdll || !breakPoint) return false;
+
+	auto const base = DebuggeeModuleBase("ntdll.dll");
+	if(!base) return false;
+
+	auto const exceptAddr = reinterpret_cast<DWORD>(dbgEvent.u.Exception.ExceptionRecord.ExceptionAddress);
+	auto const breakPointAddr = base + (breakPoint - ntdll);
+	return exceptAddr >= breakPointAddr - 1 && exceptAddr <= breakPointAddr + 1;
+}
+
+// 快照处理：此时被调试进程已被调试系统整体挂起，
+// 遍历 Threads 输出每个线程的栈快照，随后清理 breakin 僵尸线程
+DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
+{
+	(void)dbgEvent;
+
+	Log::WriteLine(__FUNCTION__ ": 收到快照请求，输出全部线程栈快照……");
+	InitializeSymbols();
+	for(auto const& [tid, info] : Threads)
+	{
+		if(tid == SnapshotBreakinThreadId) continue; // breakin 线程自身栈无意义
+		InfoHandler.AddString(__FUNCTION__ ": 线程 ID = %u：", tid);
+		DumpThreadStack(tid, info.Thread);
+	}
+	InfoHandler.Flush();
+
+	// 清理僵尸 breakin 线程：先终止再继续事件，避免其短暂复活
+	if(auto const it = Threads.find(SnapshotBreakinThreadId); it != Threads.end())
+	{
+		TerminateThread(it->second.Thread, 0);
+		it->second.Thread.release();
+		Threads.erase(it);
+	}
+	SnapshotBreakinThreadId = 0;
+	Log::WriteLine(__FUNCTION__ ": 栈快照输出完成。");
+	return DBG_CONTINUE;
 }
 
 void SyringeDebugger::PreloadData()
@@ -1817,6 +1903,10 @@ DWORD SyringeDebugger::HandleException(DEBUG_EVENT const& dbgEvent)
 	if(exceptCode == EXCEPTION_BREAKPOINT)
 		//整个载入流程都在这了。不用管Return，哥们，这里写代码的顺序就是执行的顺序，这个函数会连续执行好几千次，从前到后把每一块执行完毕
 	{
+		// 快照打断：在进入 Handle_BreakPoint 之前分流，避免落入未知断点路径
+		if(IsSnapshotBreakin(dbgEvent)) {
+			return Handle_Snapshot(dbgEvent);
+		}
 		//Log::WriteLine(__FUNCTION__ ": EXCEPTION_BREAKPOINT");
 		return Handle_BreakPoint(dbgEvent);
 	}
@@ -1981,6 +2071,9 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		exe.c_str(), printable(arguments));
 	DebugProcess(arguments);
 
+	// 快照广播：发布身份映射（含 GamePid），循环结束（任何路径）自动撤销
+	SnapshotScopeGuard const snapshotGuard{ pInfo.dwProcessId };
+
 	Log::WriteLine(__FUNCTION__ ": 分配了 0x%u 个字节的内存。", AllocDataSize);
 	pAlloc = AllocMem(nullptr, AllocDataSize);
 
@@ -2078,9 +2171,16 @@ void SyringeDebugger::Run(std::string_view const arguments)
 
 		case CREATE_THREAD_DEBUG_EVENT:
 			Threads.emplace(dbgEvent.dwThreadId, dbgEvent.u.CreateThread.hThread);
+			if(IsRemoteBreakinStart(dbgEvent.u.CreateThread.lpStartAddress)) {
+				SnapshotBreakinThreadId = dbgEvent.dwThreadId;
+				Log::WriteLine(__FUNCTION__ ": 检测到快照 breakin 线程 %u。", dbgEvent.dwThreadId);
+			}
 			break;
 
 		case EXIT_THREAD_DEBUG_EVENT:
+			if(dbgEvent.dwThreadId == SnapshotBreakinThreadId) {
+				SnapshotBreakinThreadId = 0;
+			}
 			if(auto const it = Threads.find(dbgEvent.dwThreadId); it != Threads.end())
 			{
 				it->second.Thread.release();

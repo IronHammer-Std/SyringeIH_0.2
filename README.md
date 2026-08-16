@@ -23,6 +23,13 @@ SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=
 - **`--nowait`**：等价于 `-WaitForProcessExit=false`。分离后不等待目标进程退出，Syringe 立即结束。
   默认（无 `--nowait`）在分离后等待目标进程退出并记录退出码。
 - **`--handshakes`**：别名，等价于 `-EnableHandshakeCheck=true`（SyringeIH 默认即开启握手检查）。
+- **`--snapshot`**：快照广播模式（等价于 `-StackSnapshot=true`；Syringe.json 中 `"StackSnapshot": true` 亦可触发）。
+  此模式下 Syringe 不启动游戏、不走注入流程：枚举本机所有运行中的 SyringeIH，按身份映射
+  （`Local\SyringeIH.Snapshot.{pid}`，内含 Magic/协议版本/软件版本/GamePid）三段验证——是 SyringeIH、
+  协议版本受支持（协议只增不减，当前 1 为兼容起点，更早版本放弃）——之后向每个目标进程
+  `DebugBreakProcess` 请求一次全线程栈快照，结果由各目标 SyringeIH 写入自己的 `syringe.log`，
+  广播器把打断数量/版本/PID 等汇总写入独立的 `syringe_snapshot.log`（不接触同目录 syringe 的
+  `syringe.log`），随后退出（成功返回 0）。
 - 另新增 JSON 设置项 **`WaitForProcessExit`**（默认 true）。
 
 ## Feature Flags（特性协商）

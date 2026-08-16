@@ -76,6 +76,7 @@
     <ClCompile Include="ProcessedDumpInfo.cpp" />
     <ClCompile Include="RemoteDatabase.cpp" />
     <ClCompile Include="Setting.cpp" />
+    <ClCompile Include="Snapshot.cpp" />
     <ClCompile Include="SymMap.cpp" />
   </ItemGroup>
   <ItemGroup>

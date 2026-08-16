@@ -2,6 +2,7 @@
 #include "SyringeDebugger.h"
 #include "Support.h"
 #include "Setting.h"
+#include "Snapshot.h"
 #include <string>
 
 #include <commctrl.h>
@@ -10,7 +11,9 @@ int Run(std::string_view const arguments) {
 
 	InitCommonControls();
 
-	Log::Open("syringe.log");
+	// 预扫描选择日志文件：快照广播模式绝不接触 syringe.log
+	// （_SH_DENYWR 下与同目录运行中的 syringe 互不破坏，且广播报告始终落盘）
+	Log::Open(SelectLogFile(arguments));
 
 	Log::WriteLine(VersionString);
 	Log::WriteLine("===============");
@@ -23,9 +26,31 @@ int Run(std::string_view const arguments) {
 
 	try
 	{
+		// 快照广播模式可能不带 executable（如 Syringe.exe --snapshot），
+		// 不能依赖 get_command_line 成功：先按原有规则（第一个 '"' 之前）解析 flags。
+		auto const end_flags = arguments.find('"');
+		UpdateSetting(SplitView(trim(arguments.substr(0, end_flags))));
+
+		// 权威兜底：预扫描可能误判（JSON 注释等），按最终配置切换日志文件
+		auto const predictedSnapshot =
+			CommandLineRequestsSnapshot(arguments) || JsonFileRequestsSnapshot();
+		if(StackSnapshot != predictedSnapshot) {
+			Log::Close();
+			Log::Open(StackSnapshot ? "syringe_snapshot.log" : "syringe.log");
+			Log::WriteLine("WinMain: 已按最终配置切换日志文件。");
+		}
+
+		// 快照广播模式：不启动游戏、不走注入流程，广播一圈打断后退出
+		if(StackSnapshot) {
+			Log::WriteLine("WinMain: 快照广播模式（StackSnapshot=true），开始广播……");
+			auto const code = SnapshotBroadcast();
+			Log::WriteLine("WinMain: 广播结束，返回码 %u。", code);
+			Log::Flush();
+			return static_cast<int>(code);
+		}
+
 		auto const command = get_command_line(arguments);
 		//Log::WriteLine("WinMain: 调用选项为： \"%.*s\"", printable(command.flags));
-		UpdateSetting(command.flaglist);
 		Log::WriteLine("WinMain: 可执行文件为： \"%.*s\"", printable(command.executable));
 		Log::WriteLine("WinMain: 程序启动参数为： \"%.*s\"", printable(command.arguments));
 

@@ -37,6 +37,11 @@ void Log::Flush() noexcept
 	}
 }
 
+void Log::Close() noexcept
+{
+	File.clear();
+}
+
 void Log::WriteTimestamp() noexcept
 {
 	if(File) {

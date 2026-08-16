@@ -149,6 +149,15 @@ public:
 	std::string SyringeExPath{ };
 	std::set<std::pair<DWORD, LPVOID>> StackDumpProcessedAddress{ };
 
+	// 快照广播（接收侧）：识别外部 DebugBreakProcess 的 breakin 线程，
+	// 输出全部线程栈快照并清理僵尸线程（协议见 Snapshot.h）
+	DWORD SnapshotBreakinThreadId{ 0 };
+	DWORD Handle_Snapshot(DEBUG_EVENT const& dbgEvent);
+	void DumpThreadStack(DWORD ThreadId, HANDLE Thread);
+	bool IsRemoteBreakinStart(void* lpStartAddress);
+	bool IsSnapshotBreakin(DEBUG_EVENT const& dbgEvent);
+	DWORD DebuggeeModuleBase(char const* moduleName);
+
 	// gamemd.edb 崩溃数据库（Phobos/Vinifera 共享格式）：
 	// 0xADDRESS,canContinue,ignore,description，异常地址精确命中时在
 	// 堆栈转储（Handle_StackDump）标题正下方输出描述。

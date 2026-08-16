@@ -162,6 +162,7 @@
     <ClCompile Include="ProcessedDumpInfo.cpp" />
     <ClCompile Include="RemoteDatabase.cpp" />
     <ClCompile Include="Setting.cpp" />
+    <ClCompile Include="Snapshot.cpp" />
     <ClCompile Include="SymMap.cpp" />
     <ClCompile Include="SyringeDebugger.cpp" />
   </ItemGroup>
@@ -183,6 +184,7 @@
     <ClInclude Include="RemoteDatabase.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Setting.h" />
+    <ClInclude Include="Snapshot.h" />
     <ClInclude Include="Support.h" />
     <ClInclude Include="SymMap.h" />
     <ClInclude Include="SyringeDebugger.h" />

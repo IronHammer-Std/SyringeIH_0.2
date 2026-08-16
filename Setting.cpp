@@ -27,6 +27,7 @@ bool ShowHookConflictPopup = false;
 bool LogDaemonInteraction = false;
 bool AutoTerminate = false;
 bool WaitForProcessExit = true;
+bool StackSnapshot = false;
 std::vector<std::string> IncludeDLLs;
 
 std::unordered_map<std::string, ExtensionPack> ExtPacks;
@@ -302,6 +303,12 @@ void ReadSetting()
         WaitForProcessExit = SObj.GetBool();
         Log::WriteLine("WaitForProcessExit = %s", CStrBoolImpl(WaitForProcessExit, StrBoolType::Str_true_false));
     }
+    SObj = Obj.GetObjectItem("StackSnapshot");
+    if (SObj.Available() && SObj.IsTypeBool())
+    {
+        StackSnapshot = SObj.GetBool();
+        Log::WriteLine("StackSnapshot = %s", CStrBoolImpl(StackSnapshot, StrBoolType::Str_true_false));
+    }
     SObj = Obj.GetObjectItem("ExtensionPacks");
     if (SObj.Available() && SObj.IsTypeObject())
     {
@@ -409,6 +416,11 @@ else if (v._Starts_with("-" #f "="))\
             EnableHandshakeCheck = true;
             Log::WriteLine("EnableHandshakeCheck = true (--handshakes)");
         }
+        else if (v == "--snapshot")
+        {
+            StackSnapshot = true;
+            Log::WriteLine("StackSnapshot = true (--snapshot)");
+        }
         UpdateBoolImpl(LongStackDump)
         UpdateBoolImpl(EnableHandshakeCheck)
         UpdateBoolImpl(DetachAfterInjection)
@@ -425,6 +437,7 @@ else if (v._Starts_with("-" #f "="))\
 		UpdateBoolImpl(AutoTerminate)
 		UpdateBoolImpl(LogDaemonInteraction)
 		UpdateBoolImpl(WaitForProcessExit)
+		UpdateBoolImpl(StackSnapshot)
         else
         {
             Log::WriteLine("未知选项 \"%.*s\"", printable(v));
