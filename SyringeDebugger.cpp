@@ -1991,9 +1991,11 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 		}
 
 		if (canLoad) {
+			// 握手被禁用（或 DLL 未导出手握函数）时与 SyringeEx 语义对齐：
+			// 返回空 optional，回退到 .syexe00 宿主检查，而不是无条件放行。
 			auto const res = (EnableHandshakeCheck && HasHandshake) ? Handshake(
 				DLL.GetFilename(), static_cast<int>(buffer.count),
-				buffer.checksum.value()) : true;
+				buffer.checksum.value()) : std::optional<bool>{};
 			if (res)
 			{
 				canLoad = *res;
