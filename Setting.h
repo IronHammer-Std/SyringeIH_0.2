@@ -44,6 +44,8 @@ extern bool OverwriteStartParams;
 extern bool ShowHookConflictPopup;
 extern bool AutoTerminate;
 extern bool LogDaemonInteraction;
+extern bool WaitForProcessExit;
+extern std::vector<std::string> IncludeDLLs;
 extern std::set<HookIdx> GlobalDisableHooks;
 extern std::set<HookIdx> GlobalEnableHooks;
 extern std::unordered_set<std::string, UpperHash, UpperEqualPred> IgnoreInvalidHookLibs;

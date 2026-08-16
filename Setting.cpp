@@ -26,6 +26,8 @@ bool OverwriteStartParams = false;
 bool ShowHookConflictPopup = false;
 bool LogDaemonInteraction = false;
 bool AutoTerminate = false;
+bool WaitForProcessExit = true;
+std::vector<std::string> IncludeDLLs;
 
 std::unordered_map<std::string, ExtensionPack> ExtPacks;
 std::string DefaultExtPack;
@@ -294,6 +296,12 @@ void ReadSetting()
         LogDaemonInteraction = SObj.GetBool();
         Log::WriteLine("LogDaemonInteraction = %s", CStrBoolImpl(LogDaemonInteraction, StrBoolType::Str_true_false));
 	}
+    SObj = Obj.GetObjectItem("WaitForProcessExit");
+    if (SObj.Available() && SObj.IsTypeBool())
+    {
+        WaitForProcessExit = SObj.GetBool();
+        Log::WriteLine("WaitForProcessExit = %s", CStrBoolImpl(WaitForProcessExit, StrBoolType::Str_true_false));
+    }
     SObj = Obj.GetObjectItem("ExtensionPacks");
     if (SObj.Available() && SObj.IsTypeObject())
     {
@@ -375,6 +383,32 @@ else if (v._Starts_with("-" #f "="))\
             DefaultExtPack = v;
             Log::WriteLine("更改扩展配置 \"%.*s\"", printable(v));
         }
+        else if (v._Starts_with("-i="))
+        {
+            v.remove_prefix(3);
+            IncludeDLLs.emplace_back(v);
+            Log::WriteLine("加入注入白名单 DLL \"%.*s\"", printable(v));
+        }
+        else if (v == "--detach")
+        {
+            DetachAfterInjection = true;
+            Log::WriteLine("DetachAfterInjection = true (--detach)");
+        }
+        else if (v == "--nodetach")
+        {
+            DetachAfterInjection = false;
+            Log::WriteLine("DetachAfterInjection = false (--nodetach)");
+        }
+        else if (v == "--nowait")
+        {
+            WaitForProcessExit = false;
+            Log::WriteLine("WaitForProcessExit = false (--nowait)");
+        }
+        else if (v == "--handshakes")
+        {
+            EnableHandshakeCheck = true;
+            Log::WriteLine("EnableHandshakeCheck = true (--handshakes)");
+        }
         UpdateBoolImpl(LongStackDump)
         UpdateBoolImpl(EnableHandshakeCheck)
         UpdateBoolImpl(DetachAfterInjection)
@@ -390,6 +424,7 @@ else if (v._Starts_with("-" #f "="))\
         UpdateBoolImpl(ShowHookConflictPopup)
 		UpdateBoolImpl(AutoTerminate)
 		UpdateBoolImpl(LogDaemonInteraction)
+		UpdateBoolImpl(WaitForProcessExit)
         else
         {
             Log::WriteLine("未知选项 \"%.*s\"", printable(v));
