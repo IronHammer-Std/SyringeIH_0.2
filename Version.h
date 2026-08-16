@@ -1,9 +1,9 @@
 ﻿#pragma once
 
 #define VMAJOR 0
-#define VMINOR 3
+#define VMINOR 4
 #define VRELEASE 0
-#define VBUILD 99
+#define VBUILD 2
 
 #define PRODUCT_VERSION VMAJOR, VMINOR, VRELEASE, VBUILD
 #define FILE_VERSION VMAJOR, VMINOR, VRELEASE, VBUILD
@@ -11,7 +11,7 @@
 #define StrImpl(x) #x
 #define Str(x) StrImpl(x)
 
-#define CUSTOM_VERSION_STR "0.3 Release"
+//#define CUSTOM_VERSION_STR "0.3 Release"
 
 #ifdef CUSTOM_VERSION_STR
 	#define VERSION_STR CUSTOM_VERSION_STR

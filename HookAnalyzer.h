@@ -2,6 +2,7 @@
 
 #include<vector>
 #include<unordered_map>
+#include<string>
 
 const std::string AnalyzerDelim = "\\*^*\\";
 
