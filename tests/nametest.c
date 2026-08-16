@@ -1,9 +1,9 @@
-﻿// nametest.exe -- SyringeIH thread-naming (0x406D1388) integration test rig (manual).
+// nametest.exe -- SyringeIH thread-naming (0x406D1388) integration test rig.
 //
-// Purpose: raise the MSVC thread-name exception to name the main thread
-// "CrashWorker", then fault so the crash report shows the name in both
-// catalog channels:
-//   1. TEXT segment header: "异常线程ID = N（名称：CrashWorker）"
+// Purpose: raise the MSVC thread-name exception (hybrid layout: params =
+// {0x1000, &THREADNAME_INFO, ...}) to name the main thread "CrashWorker",
+// then fault so the crash report shows the name in both catalog channels:
+//   1. TEXT segment header: "异常线程ID = N（CrashWorker）"
 //   2. thread JSON segment: {"name":"CrashWorker", ...}
 // plus the one-line naming hint in syringe.log:
 //   "SyringeDebugger::HandleException: 线程 N 命名为 \"CrashWorker\"。"
@@ -11,11 +11,9 @@
 // SEH keeps the process alive ~5 s after the fault so Syringe's daemon monitor
 // (2 s connect timeout) flushes the TEXT report to syringe.log.
 //
-// Build (x86 toolchain, e.g. VS2022 vcvars32):
-//   cl /nologo /MT /O1 /DYNAMICBASE:NO /EHa nametest.c /link /BASE:0x00500000 /OPT:NOREF /OUT:nametest.exe
-//
-// Run (in a directory containing Syringe.exe, SyringeEx.dll):
-//   Syringe.exe "nametest.exe"
+// Automated: Tests.exe (ThreadNameIntegrationTests.cpp) runs the full debug
+// session in-process against nametest.exe / nametest_std.exe.
+// Build: via tests\NametestTarget.vcxproj (x86, /MT, /O1, /EHa, /DYNAMICBASE:NO).
 
 #include <windows.h>
 

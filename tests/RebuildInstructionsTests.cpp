@@ -1,35 +1,11 @@
 #include "SyringeDebugger.h"
 
+#include "TestHarness.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
-
-// ---- minimal test harness ----
-
-static int g_total = 0;
-static int g_passed = 0;
-static int g_failed = 0;
-
-#define TEST_CASE(name) static void test_##name(); \
-    struct TestReg_##name { TestReg_##name() { tests().push_back({#name, test_##name}); } } reg_##name; \
-    static void test_##name()
-
-struct TestEntry { const char* name; void (*fn)(); };
-static std::vector<TestEntry>& tests() { static std::vector<TestEntry> v; return v; }
-
-static void check_impl(bool cond, const char* expr, const char* file, int line)
-{
-    ++g_total;
-    if (cond) {
-        ++g_passed;
-    } else {
-        ++g_failed;
-        printf("  FAIL: %s (%s:%d)\n", expr, file, line);
-    }
-}
-
-#define CHECK(expr) check_impl(!!(expr), #expr, __FILE__, __LINE__)
 
 // ---- Zydis helpers for verification ----
 

@@ -62,6 +62,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="tests\RebuildInstructionsTests.cpp" />
+    <ClCompile Include="tests\ThreadNameIntegrationTests.cpp" />
     <ClCompile Include="SyringeDebugger.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="CRC32.cpp" />
@@ -80,8 +81,17 @@
     <ClCompile Include="SymMap.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="tests\TestHarness.h" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="external\Zydis.vcxproj">
       <Project>{B2C3D4E5-2345-6789-ABCD-EF2345678901}</Project>
+    </ProjectReference>
+    <ProjectReference Include="tests\NametestTarget.vcxproj">
+      <Project>{C902AB42-BAA7-4036-97D4-86F910F746F3}</Project>
+    </ProjectReference>
+    <ProjectReference Include="tests\NametestStdTarget.vcxproj">
+      <Project>{A52D9C5B-D137-478C-9F6D-36C42DE25BDF}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
