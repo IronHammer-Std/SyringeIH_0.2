@@ -1963,10 +1963,12 @@ void SyringeDebugger::Run(std::string_view const arguments)
 
 		if(dbgEvent.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT) {
 			exit_code = dbgEvent.u.ExitProcess.dwExitCode;
+			ContinueDebugEvent(dbgEvent.dwProcessId, dbgEvent.dwThreadId, continueStatus);
 			//let it go until the debuggee no longer exists
 			break;
 		} 
 		else if(dbgEvent.dwDebugEventCode == RIP_EVENT) {
+			ContinueDebugEvent(dbgEvent.dwProcessId, dbgEvent.dwThreadId, continueStatus);
 			//let it go until the debuggee no longer exists
 			break;
 		}
@@ -1977,9 +1979,29 @@ void SyringeDebugger::Run(std::string_view const arguments)
 		{
 			DebugSetProcessKillOnExit(FALSE);
 			SymCleanup(pInfo.hProcess);
-			CloseHandle(pInfo.hProcess);
 			DebugActiveProcessStop(pInfo.dwProcessId);
 			Log::WriteLine(__FUNCTION__ ": Syringe将分离并结束运行，已注入的代码将保留。");
+			if (WaitForProcessExit)
+			{
+				Log::WriteLine(__FUNCTION__ ": 正在等待目标进程退出……");
+				WaitForSingleObject(pInfo.hProcess, INFINITE);
+				DWORD DetachExitCode = 0;
+				if (GetExitCodeProcess(pInfo.hProcess, &DetachExitCode))
+				{
+					exit_code = DetachExitCode;
+					auto DetachExitStr = GetExitStatusStr((int)DetachExitCode);
+					Log::WriteLine(__FUNCTION__ ": 目标进程已退出，返回码：%X (%u).", DetachExitCode, DetachExitCode);
+					if (!DetachExitStr.empty())
+					{
+						Log::WriteLine(__FUNCTION__ ": 退出情况：%s", DetachExitStr.c_str());
+					}
+				}
+				else
+				{
+					Log::WriteLine(__FUNCTION__ ": 获取目标进程退出码失败。");
+				}
+			}
+			CloseHandle(pInfo.hProcess);
 			Log::WriteLine();
 			return;
 		}
