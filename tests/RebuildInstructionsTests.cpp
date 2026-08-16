@@ -627,11 +627,119 @@ TEST_CASE(short_jnz_forced_near)
     CHECK(target == 0x00401016);
 }
 
+// ============================================================================
+// gamemd.edb crash-database parser tests (Phobos/Vinifera shared format)
+// ============================================================================
+
+#include <direct.h>
+#include <string>
+
+static std::string edb_temp_dir(const char* tag)
+{
+    char tmpPath[MAX_PATH];
+    GetTempPathA(MAX_PATH, tmpPath);
+    std::string dir = std::string(tmpPath) + "syringe-edb-test-" + tag + "-" + std::to_string(GetCurrentProcessId());
+    CreateDirectoryA(dir.c_str(), nullptr);
+    return dir;
+}
+
+static void edb_cleanup(std::string const& dir)
+{
+    DeleteFileA((dir + "\\gamemd.edb").c_str());
+    RemoveDirectoryA(dir.c_str());
+}
+
+static bool edb_write_file(std::string const& dir, char const* content, size_t len)
+{
+    FILE* f = nullptr;
+    if (fopen_s(&f, (dir + "\\gamemd.edb").c_str(), "wb") != 0 || f == nullptr)
+        return false;
+    fwrite(content, 1, len, f);
+    fclose(f);
+    return true;
+}
+
+// Full-format parse: comments/blank lines skipped, 0x/0X accepted, missing
+// fields rejected, comma-bearing descriptions kept verbatim, CRLF handled.
+TEST_CASE(edb_parser_full_format)
+{
+    static char const content[] =
+        "; Phobos/Vinifera-style exception database\r\n"
+        "\r\n"
+        "   ; comment with leading whitespace\r\n"
+        "\t   \r\n"
+        "  0x00417D05,0,0,An AircraftType has fired a weapon which has Suicide=yes set.\r\n"
+        "0X00441C28,1,1,You have set [AudioVisual]->ShakeScreen= to zero.\r\n"
+        "0x004895C7,0,0,You have a warhead with a CellSpread greater than 11.\r\n"
+        "0x00000002,0,0,Unknown. The cause depends on the stack dump.\r\n"
+        "0x00000061,0,0,Encountered when launching RA2's unedited campaign missions but a new country was added, so a comma here is kept.\r\n"
+        "0045ED69,0,0,Missing 0x prefix - skipped\r\n"
+        "0x0045ED70,0,Missing ignore field - skipped\r\n"
+        "0x0045ED80,Only one field - skipped\r\n"
+        "0x0045ED90,0,0,\r\n";
+
+    auto dir = edb_temp_dir("full");
+    CHECK(edb_write_file(dir, content, sizeof(content) - 1));
+
+    char cwd[MAX_PATH];
+    _getcwd(cwd, MAX_PATH);
+    CHECK(_chdir(dir.c_str()) == 0);
+    auto db = SyringeDebugger::LoadExceptionDatabase();
+    _chdir(cwd);
+
+    edb_cleanup(dir);
+
+    CHECK(db.size() == 5);
+
+    if (db.size() == 5)
+    {
+        CHECK(db[0].Address == 0x00417D05);
+        CHECK(db[0].Description == "An AircraftType has fired a weapon which has Suicide=yes set.");
+
+        CHECK(db[1].Address == 0x00441C28); // 0X prefix accepted
+        CHECK(db[1].Description == "You have set [AudioVisual]->ShakeScreen= to zero.");
+
+        CHECK(db[2].Address == 0x004895C7);
+        CHECK(db[2].Description == "You have a warhead with a CellSpread greater than 11.");
+
+        CHECK(db[3].Address == 0x00000002); // small special-state value
+        CHECK(db[3].Description == "Unknown. The cause depends on the stack dump.");
+
+        CHECK(db[4].Address == 0x00000061);
+        CHECK(db[4].Description ==
+            "Encountered when launching RA2's unedited campaign missions but a new country was added, so a comma here is kept.");
+    }
+
+    // Exact-match lookup semantics (same as Phobos).
+    auto const pHit = SyringeDebugger::FindExceptionDatabaseEntry(db, 0x00417D05);
+    CHECK(pHit != nullptr);
+    CHECK(pHit && strcmp(pHit, "An AircraftType has fired a weapon which has Suicide=yes set.") == 0);
+    CHECK(SyringeDebugger::FindExceptionDatabaseEntry(db, 0x00417D06) == nullptr);
+    CHECK(SyringeDebugger::FindExceptionDatabaseEntry(db, 0x417D05) != nullptr); // leading zeros are irrelevant numerically
+    CHECK(SyringeDebugger::FindExceptionDatabaseEntry(db, 0x00000002) != nullptr);
+}
+
+// Missing file: silent skip, empty database (Phobos behavior).
+TEST_CASE(edb_parser_missing_file)
+{
+    auto dir = edb_temp_dir("missing");
+
+    char cwd[MAX_PATH];
+    _getcwd(cwd, MAX_PATH);
+    CHECK(_chdir(dir.c_str()) == 0);
+    auto db = SyringeDebugger::LoadExceptionDatabase();
+    _chdir(cwd);
+
+    edb_cleanup(dir);
+
+    CHECK(db.empty());
+}
+
 // ---- entry point ----
 
 int main()
 {
-    printf("Running RebuildInstructions tests...\n\n");
+    printf("Running SyringeIH tests...\n\n");
 
     for (auto const& t : tests())
     {
