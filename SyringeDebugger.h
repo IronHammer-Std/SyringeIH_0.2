@@ -18,6 +18,14 @@
 
 #include <windows.h>
 
+// SyringeEx 移植：相对指令重编码（RebuildInstructions）依赖的 Zydis
+#pragma warning(push, 0)
+#include <Zydis/Decoder.h>
+#include <Zydis/DecoderTypes.h>
+#include <Zydis/Encoder.h>
+#include <Zydis/Utils.h>
+#pragma warning(pop)
+
 struct SharedMemHeader
 {
 	int TotalSize;
@@ -141,6 +149,23 @@ public:
 	std::string SyringeExPath{ };
 	std::set<std::pair<DWORD, LPVOID>> StackDumpProcessedAddress{ };
 
+	// gamemd.edb 崩溃数据库（Phobos/Vinifera 共享格式）：
+	// 0xADDRESS,canContinue,ignore,description，异常地址精确命中时在
+	// 堆栈转储（Handle_StackDump）标题正下方输出描述。
+	// 解析/匹配均为 static，便于 Tests 工程直接验证。
+	struct ExceptionDatabaseEntry
+	{
+		unsigned int Address;
+		std::string Description;
+	};
+
+	static std::vector<ExceptionDatabaseEntry> LoadExceptionDatabase();
+	static char const* FindExceptionDatabaseEntry(
+		std::vector<ExceptionDatabaseEntry> const& entries, unsigned int Address);
+
+	std::vector<ExceptionDatabaseEntry> ExceptionDatabase;
+	bool bExceptionDatabaseLoaded{ false };
+
 	void FindDLLsLoop(const FindFile& file, const std::string& Path, bool AlwaysLoad);
 
 	void InitializeSymbols();
@@ -184,6 +209,27 @@ public:
 	std::vector<Hook*> v_AllHooks;
 	std::vector<Hook*>::iterator loop_LoadLibrary;
 
+	// SyringeEx 移植：把被 hook 覆盖的原始字节搬迁到 trampoline 时，
+	// 对其中的相对寻址指令（Jcc/JMP/CALL）做 near 重编码、修正目标。
+	// 保持 public（SyringeIH 类体大量成员对外可见），Tests 工程可直接调用。
+	static std::vector<BYTE> RebuildInstructions(BYTE const* bytes, size_t size, DWORD originalAddr, DWORD newAddr);
+
+	// SyringeEx 移植：Feature Flags（SyringeFeatures::* 导出布尔）协商
+	static constexpr std::string_view FeatureFlagNames[] = {
+		"ESPModification",
+		"ZFPreservation",
+		"ReladdrInstructionFixup",// 阶段 4（Zydis）完成后才真正置 true
+	};
+
+	struct FeatureFlagEntry {
+		char lib[MaxNameLength];
+		char symbol[MaxNameLength];
+	};
+
+	std::vector<FeatureFlagEntry> v_FeatureFlags;
+	std::vector<FeatureFlagEntry>::iterator loop_FeatureFlags;
+	bool bFeaturesSet{ false };
+
 	// syringe
 	std::string exe;
 	void* pcEntryPoint{ nullptr };
@@ -205,7 +251,6 @@ public:
 		static constexpr auto CodeSize = 0x40u;
 		std::byte LoadLibraryFunc[CodeSize];
 		void* ProcAddress;
-		void* ReturnEIP;
 		char LibName[MaxNameLength];
 		char ProcName[MaxNameLength];
 	};
