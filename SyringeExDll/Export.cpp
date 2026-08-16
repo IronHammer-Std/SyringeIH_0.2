@@ -1,4 +1,4 @@
-
+﻿
 #include "..\ExtJson.h"
 #include <unordered_map>
 #include <Windows.h>
@@ -19,8 +19,8 @@ struct ExportOffsets
 	int Reserved[6];
 }Ofs
 {
-	40,//FOR RESHADE //38,
-	16 //FOR RESHADE //9
+	73,//SyringeEx 布局（FS:[0x14] + POPAD 副本 + CMP 前置） //40,//FOR RESHADE //38,
+	9 //CALL 指令 rel32 的写入偏移 //16 //FOR RESHADE //9
 };
 
 extern "C" void __declspec(dllexport) __stdcall UpdateJson(const char* Name, const char* Json)
