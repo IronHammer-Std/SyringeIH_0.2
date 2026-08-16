@@ -1902,6 +1902,32 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 		return;
 	}
 
+	if (!IncludeDLLs.empty())
+	{
+		bool InList = false;
+		std::string cfnUpper = fn;
+		for (auto& c : cfnUpper)c = (char)::toupper(c);
+		std::string cAbsUpper = AbsPath;
+		for (auto& c : cAbsUpper)c = (char)::toupper(c);
+		for (auto const& inc : IncludeDLLs)
+		{
+			std::string cinc = inc;
+			for (auto& c : cinc)c = (char)::toupper(c);
+			if (cfnUpper == cinc || cAbsUpper == cinc)
+			{
+				InList = true;
+				break;
+			}
+		}
+		if (!InList)
+		{
+			Log::WriteLine(
+				__FUNCTION__ ": DLL \"%.*s\" 不在 -i= 白名单中，跳过。",
+				printable(fn));
+			return;
+	}
+	}
+
 	try {
 		PortableExecutable DLL{ AbsPath };
 		HookBuffer buffer;
