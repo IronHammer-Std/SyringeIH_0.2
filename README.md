@@ -35,6 +35,9 @@ SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=
   - **`SnapshotFileName`**：Syringe.json 参数（默认 `""`，可用 `-SnapshotFileName=xxx` 覆盖）；
     广播时原样复述进载荷；接收方非空时，**本次快照的全程内容**（摘要/request/process/thread/TEXT
     各段）输出到该文件而非 `syringe.log`（syringe.log 句柄保持打开，结束后恢复，不截断）。
+    ⚠ Windows PowerShell 5.1 传参会把 `-X=值.扩展名` 在点号前拆开（`snap_manual.log` 变成
+    `snap_manual .log`）。Syringe 已在 flag 解析层自动拼回（日志可见"命令行参数修复"），
+    一般无需处理；若遇到异常可给整个 flag 加引号或改用 `--%` / cmd /c（pwsh 7+ 无此问题）。
 - 另新增 JSON 设置项 **`WaitForProcessExit`**（默认 true）。
 
 ## 快照 / 异常报告格式（skill 接口）v1

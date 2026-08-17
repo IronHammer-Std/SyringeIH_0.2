@@ -376,6 +376,21 @@ void UpdateSetting(const std::vector<std::string_view>& Flags)
     for (size_t i = 0; i < Flags.size(); i++)
     {
         auto v = Flags[i];
+        std::string mergedValue;
+        // Windows PowerShell 5.1 传参修复：它会把 "-X=值.扩展名" 拆成
+        // "-X=值" 与 ".扩展名" 两个 token（点号前插入空格）。
+        // 若本 token 是 "-X=值" 形式且其后紧跟以 '.' 开头的 token，则循环拼回。
+        while (i + 1 < Flags.size() && Flags[i + 1].size() > 1 && Flags[i + 1][0] == '.'
+            && v.size() > 1 && v[0] == '-' && v.find('=') != std::string_view::npos && v.back() != '=')
+        {
+            auto const& next = Flags[i + 1];
+            mergedValue.assign(v);
+            mergedValue.append(next);
+            Log::WriteLine("命令行参数修复：\"%.*s\" + \"%.*s\" → \"%s\"（Windows PowerShell 传参拆分）",
+                printable(v), printable(next), mergedValue.c_str());
+            v = mergedValue;
+            ++i;
+        }
 #define UpdateBoolImpl(f)\
 else if (v._Starts_with("-" #f "="))\
 {\

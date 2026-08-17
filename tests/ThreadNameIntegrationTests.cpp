@@ -442,3 +442,24 @@ TEST_CASE(snapshot_filename_redirect)
 {
 	RunRedirectScenario();
 }
+
+// Windows PowerShell 5.1 传参拆分修复："-X=值" + ".扩展名" 应被自动拼回
+TEST_CASE(setting_ps51_split_repair)
+{
+	auto const old = SnapshotFileName;
+
+	// 拆分场景：-SnapshotFileName=snap_manual + .log → snap_manual.log
+	UpdateSetting({ "-SnapshotFileName=snap_manual", ".log" });
+	CHECK(SnapshotFileName == "snap_manual.log");
+
+	// 正常单 token 不受影响
+	UpdateSetting({ "-SnapshotFileName=direct.log" });
+	CHECK(SnapshotFileName == "direct.log");
+
+	// 无 '=' 的 token 后跟 '.x' 不触发修复
+	SnapshotFileName = old;
+	UpdateSetting({ "foo", ".log" });
+	CHECK(SnapshotFileName == old);
+
+	SnapshotFileName = old;
+}
