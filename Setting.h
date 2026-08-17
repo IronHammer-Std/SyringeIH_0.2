@@ -25,6 +25,8 @@ bool InAddrList(int Addr);
 extern bool ShowHookAnalysis;
 extern bool ShowHookAnalysis_ByLib;
 extern bool ShowHookAnalysis_ByAddr;
+// 钩子分析报告输出格式（Syringe.json 的 HookAnalysis.Format，默认 "Text"；可选 "NDJSON"）
+extern std::string HookAnalysisFormat;
 extern std::vector<int> AddrRestriction;
 extern std::vector<std::string> LibRestriction;
 extern JsonFile Setting;

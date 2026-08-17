@@ -779,3 +779,90 @@ TEST_CASE(match_include_dlls_patterns)
 	// 根目录扫描（relPath 无目录成分）时，目录模式不误命中
 	CHECK(!MatchIncludeDLLs("X.dll", "C:\\game\\X.dll", "X.dll", { "Patches\\X.dll" }));
 }
+
+// HookAnalysis.Format = "NDJSON"：报告按行输出合法 JSON（start/end 事件行 + 每条钩子一行）
+TEST_CASE(hook_analysis_ndjson_format)
+{
+	char cwd[MAX_PATH];
+	_getcwd(cwd, MAX_PATH);
+
+	char tmpDir[MAX_PATH];
+	GetTempPathA(MAX_PATH, tmpDir);
+	strcat_s(tmpDir, "syringe_hookndjson_test");
+	CreateDirectoryA(tmpDir, nullptr);
+	SetCurrentDirectoryA(tmpDir);
+
+	auto const oldFmt = HookAnalysisFormat;
+	auto const oldByLib = ShowHookAnalysis_ByLib;
+	auto const oldByAddr = ShowHookAnalysis_ByAddr;
+
+	HookAnalyzer A;
+	A.Add(HookAnalyzeData{ "C:\\game\\mod.dll", "TestHook", 0x401000, 5, 100000, "", "" });
+	A.Add(HookAnalyzeData{ "C:\\game\\mod.dll", "OtherHook", 0x402000, 8, 50, "sub", "RelLib.dll" });
+
+	HookAnalysisFormat = "NDJSON";
+	ShowHookAnalysis_ByLib = true;
+	ShowHookAnalysis_ByAddr = true;
+	CHECK(A.Report());
+
+	FILE* f = fopen("HookAnalysis.log", "rb");
+	CHECK(f != nullptr);
+	if (f)
+	{
+		int lineCount = 0;
+		int dataCount = 0;
+		int eventCount = 0;
+		char line[4096];
+		while (fgets(line, sizeof(line), f))
+		{
+			++lineCount;
+			auto* const j = cJSON_Parse(line);
+			CHECK(j != nullptr);
+			if (j)
+			{
+				auto* const ev = cJSON_GetObjectItem(j, "event");
+				if (ev && ev->type == cJSON_String)
+				{
+					++eventCount;
+					CHECK(strcmp(ev->valuestring, "start") == 0 || strcmp(ev->valuestring, "end") == 0);
+				}
+				else
+				{
+					++dataCount;
+					auto* const sec = cJSON_GetObjectItem(j, "section");
+					CHECK(sec && sec->type == cJSON_String);
+					auto* const addr = cJSON_GetObjectItem(j, "addr");
+					CHECK(addr && addr->type == cJSON_Number);
+					auto* const proc = cJSON_GetObjectItem(j, "proc");
+					CHECK(proc && proc->type == cJSON_String);
+					auto* const rel_lib = cJSON_GetObjectItem(j, "rel_lib");
+					CHECK(rel_lib && rel_lib->type == cJSON_String);
+					auto* const lib = cJSON_GetObjectItem(j, "lib");
+					CHECK(lib && lib->type == cJSON_String);
+					auto* const len = cJSON_GetObjectItem(j, "len");
+					CHECK(len && len->type == cJSON_Number);
+					auto* const prio = cJSON_GetObjectItem(j, "priority");
+					CHECK(prio && prio->type == cJSON_Number);
+					auto* const sub = cJSON_GetObjectItem(j, "sub_priority");
+					CHECK(sub && sub->type == cJSON_String);
+				}
+				cJSON_Delete(j);
+			}
+		}
+		fclose(f);
+		CHECK(lineCount == 6); // start + 4 条钩子（ByAddress 2 + ByLibrary 2）+ end
+		CHECK(eventCount == 2);
+		CHECK(dataCount == 4);
+	}
+
+	HookAnalysisFormat = oldFmt;
+	ShowHookAnalysis_ByLib = oldByLib;
+	ShowHookAnalysis_ByAddr = oldByAddr;
+
+	SetCurrentDirectoryA(cwd);
+	char logPath[MAX_PATH];
+	strcpy_s(logPath, tmpDir);
+	strcat_s(logPath, "\\HookAnalysis.log");
+	DeleteFileA(logPath);
+	RemoveDirectoryA(tmpDir);
+}

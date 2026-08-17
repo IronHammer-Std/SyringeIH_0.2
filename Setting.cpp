@@ -10,6 +10,7 @@ std::string DefaultCmdLine;
 std::string SnapshotFileName;
 bool ShowHookAnalysis_ByLib = false;
 bool ShowHookAnalysis_ByAddr = false;
+std::string HookAnalysisFormat = "Text"; // HookAnalysis.Format："Text"（默认）或 "NDJSON"
 std::vector<int> AddrRestriction;
 std::vector<std::string> LibRestriction;
 bool RemoteDatabaseDump = false;
@@ -156,6 +157,12 @@ void ReadSetting()
             Log::WriteLine("HookAnalysis = %s", CStrBoolImpl(ShowHookAnalysis, StrBoolType::Str_true_false));
             Log::WriteLine("\tByLibrary = %s", CStrBoolImpl(ShowHookAnalysis_ByLib, StrBoolType::Str_true_false));
             Log::WriteLine("\tByAddress = %s", CStrBoolImpl(ShowHookAnalysis_ByAddr, StrBoolType::Str_true_false));
+            TObj = SObj.GetObjectItem("Format");
+            if (TObj.Available() && TObj.IsTypeString())
+            {
+                HookAnalysisFormat = TObj.GetString();
+            }
+            Log::WriteLine("\tFormat = %s", HookAnalysisFormat.c_str());
             TObj = SObj.GetObjectItem("LibraryRange");
             Log::WriteLine("\tAddressRange : ");
             if (TObj.Available() && TObj.IsTypeArray())

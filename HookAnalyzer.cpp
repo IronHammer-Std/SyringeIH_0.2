@@ -2,9 +2,63 @@
 #include "Handle.h"
 #include "Setting.h"
 #include <filesystem>
+#include <cstring>
 #include "Log.h"
 
 void PrintTimeStampToFile(const FileHandle& File);
+
+// ============ NDJSON（HookAnalysis.Format = "NDJSON"）输出辅助 ============
+
+// JSON 字符串转义输出（入参须为 UTF-8；含两端引号）
+static void PrintJsonEscaped(FILE* File, std::string const& utf8)
+{
+	fputc('"', File);
+	for (auto c : utf8)
+	{
+		switch (c)
+		{
+		case '"': fputs("\\\"", File); break;
+		case '\\': fputs("\\\\", File); break;
+		case '\n': fputs("\\n", File); break;
+		case '\r': fputs("\\r", File); break;
+		case '\t': fputs("\\t", File); break;
+		default:
+			if ((unsigned char)c < 0x20)
+				fprintf(File, "\\u%04X", (unsigned char)c);
+			else
+				fputc(c, File);
+			break;
+		}
+	}
+	fputc('"', File);
+}
+
+// ACP(代码页 936) → UTF-8：NDJSON 规范要求 UTF-8（库名/路径可能含中文）
+static std::string ACPtoUTF8(std::string const& s)
+{
+	if (s.empty()) return s;
+	auto const wlen = MultiByteToWideChar(CP_ACP, 0, s.c_str(), (int)s.size(), nullptr, 0);
+	std::wstring w(wlen, L'\0');
+	MultiByteToWideChar(CP_ACP, 0, s.c_str(), (int)s.size(), w.data(), wlen);
+	auto const ulen = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), wlen, nullptr, 0, nullptr, nullptr);
+	std::string u(ulen, '\0');
+	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), wlen, u.data(), ulen, nullptr, nullptr);
+	return u;
+}
+
+// 单条钩子记录输出为一行 JSON（section 标明所属分组：ByAddress / ByLibrary）
+static void PrintHookNDJSON(FILE* File, char const* section, HookAnalyzeData const& v)
+{
+	fprintf(File, "{\"section\":\"%s\",\"addr\":%d,\"proc\":", section, v.Addr);
+	PrintJsonEscaped(File, ACPtoUTF8(v.Proc));
+	fputs(",\"rel_lib\":", File);
+	PrintJsonEscaped(File, ACPtoUTF8(v.RelLib));
+	fputs(",\"lib\":", File);
+	PrintJsonEscaped(File, ACPtoUTF8(v.Lib));
+	fprintf(File, ",\"len\":%d,\"priority\":%d,\"sub_priority\":", v.Len, v.Priority);
+	PrintJsonEscaped(File, ACPtoUTF8(v.SubPriority));
+	fputs("}\n", File);
+}
 
 void HookAnalyzer::Add(HookAnalyzeData&& Data)
 {
@@ -22,37 +76,78 @@ bool HookAnalyzer::Report()
 {
 	FileHandle File = FileHandle(fopen("HookAnalysis.log", "w"));
 	if (!File)return false;
-	fprintf(File, "%s 将分析获取到的钩子。\n", VersionString);
+	bool const NDJSON = _stricmp(HookAnalysisFormat.c_str(), "NDJSON") == 0;
+	if (NDJSON)
+	{
+		fprintf(File, "{\"event\":\"start\",\"version\":\"%s\"}\n", VersionString);
+	}
+	else
+	{
+		fprintf(File, "%s 将分析获取到的钩子。\n", VersionString);
+	}
 	if (ShowHookAnalysis_ByAddr)
 	{
-		fputs("========================\n", File);
-		fputs("按照钩子位置分析：（每个地址处按照钩子执行序）\n", File);
-		for (auto& p : ByAddress)
+		if (NDJSON)
 		{
-			fprintf(File, "在 %08X ：\n", p.first);
-			for (auto v : p.second)
+			for (auto& p : ByAddress)
 			{
-				fprintf(File, "钩子\"%s，相对于\"%s\"，来自\"%s\"，长度%d，优先级 %d，次优先级 \"%s\"\n", v.Proc.c_str(), v.RelLib.c_str(), v.Lib.c_str(), v.Len, v.Priority, v.SubPriority.c_str());
+				for (auto const& v : p.second)
+				{
+					PrintHookNDJSON(File, "ByAddress", v);
+				}
+			}
+		}
+		else
+		{
+			fputs("========================\n", File);
+			fputs("按照钩子位置分析：（每个地址处按照钩子执行序）\n", File);
+			for (auto& p : ByAddress)
+			{
+				fprintf(File, "在 %08X ：\n", p.first);
+				for (auto v : p.second)
+				{
+					fprintf(File, "钩子\"%s，相对于\"%s\"，来自\"%s\"，长度%d，优先级 %d，次优先级 \"%s\"\n", v.Proc.c_str(), v.RelLib.c_str(), v.Lib.c_str(), v.Len, v.Priority, v.SubPriority.c_str());
+				}
 			}
 		}
 	}
 	
 	if (ShowHookAnalysis_ByLib)
 	{
-		fputs("========================\n", File);
-		fputs("按照钩子来源分析：\n", File);
-		for (auto& p : ByLibName)
+		if (NDJSON)
 		{
-			fprintf(File, "正在分析 DLL ：\"%s\" ……\n", p.first.c_str());
-			for (auto v : p.second)
+			for (auto& p : ByLibName)
 			{
-				fprintf(File, "钩子\"%s\"，相对于\"%s\"，位于%08X，长度%d，优先级 %d，次优先级 \"%s\"\n", v.Proc.c_str(), v.RelLib.c_str(), v.Addr, v.Len, v.Priority, v.SubPriority.c_str());
+				for (auto const& v : p.second)
+				{
+					PrintHookNDJSON(File, "ByLibrary", v);
+				}
+			}
+		}
+		else
+		{
+			fputs("========================\n", File);
+			fputs("按照钩子来源分析：\n", File);
+			for (auto& p : ByLibName)
+			{
+				fprintf(File, "正在分析 DLL ：\"%s\" ……\n", p.first.c_str());
+				for (auto v : p.second)
+				{
+					fprintf(File, "钩子\"%s\"，相对于\"%s\"，位于%08X，长度%d，优先级 %d，次优先级 \"%s\"\n", v.Proc.c_str(), v.RelLib.c_str(), v.Addr, v.Len, v.Priority, v.SubPriority.c_str());
+				}
 			}
 		}
 	}
 	
-	fputs("========================\n", File);
-	fprintf(File, "%s 分析完毕。\n", VersionString);
+	if (NDJSON)
+	{
+		fputs("{\"event\":\"end\"}\n", File);
+	}
+	else
+	{
+		fputs("========================\n", File);
+		fprintf(File, "%s 分析完毕。\n", VersionString);
+	}
 	return true;
 }
 

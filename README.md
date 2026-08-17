@@ -73,6 +73,31 @@ Syringe.exe <exe name> [-i=<injectedfile.dll> ...] [--args="<arguments>"]
   或 Syringe.json 的 `EnableHandshakeCheck` 显式开启。
 - 另新增 JSON 设置项 **`WaitForProcessExit`**（默认 true）。
 
+## 钩子分析报告（HookAnalysis）
+
+Syringe.json 的 **`HookAnalysis`** 可为布尔（`true` = 按库 + 按地址都输出）或对象：
+
+```json
+{
+  "HookAnalysis": {
+    "ByLibrary": true,
+    "ByAddress": true,
+    "Format": "Text",
+    "LibraryRange": [["00400000", "00FFFFFF"], ["kernel32.dll", "user32.dll"]]
+  }
+}
+```
+
+- `ByLibrary` / `ByAddress`：控制输出分组（按钩子来源 / 按钩子位置），至少一个为 true 时启用分析，
+  结果写入 **`HookAnalysis.log`**（目标目录，随 Syringe 运行目录）。
+- **`Format`**（新增，`ByLibrary`/`ByAddress` 平级）：输出格式标签，默认 `"Text"`（现有中文文本
+  报告，不变）；设为 **`"NDJSON"`** 时改为**逐行 JSON**（JSON Lines，UTF-8），便于脚本/工具消费：
+  - 首行 `{"event":"start","version":"..."}`，末行 `{"event":"end"}`；
+  - 每条钩子一行：`{"section":"ByAddress|ByLibrary","addr":<十进制>,"proc":"...","rel_lib":"...","lib":"...","len":<十进制>,"priority":<十进制>,"sub_priority":"..."}`；
+  - 字符串字段按 JSON 规范转义（引号/反斜杠/控制符），非 ASCII 转 UTF-8；
+  - `ByLibrary` / `ByAddress` 开关在两种格式下都生效（NDJSON 下同一条钩子按分组可出现两次，
+    以 `section` 区分）。
+
 ## 快照模式
 
 ### 快照模式的命令行

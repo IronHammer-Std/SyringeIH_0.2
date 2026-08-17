@@ -163,7 +163,7 @@
 
 - 主配置：**JSON 文件 `Syringe.json`**（`ReadSetting`，`Setting.cpp:102-325`），自封装 cJSON（`ExtJson.h` 的 `JsonFile/JsonObject`），支持 UTF-8 / UTF-16LE / UTF-16BE BOM（`38-78`）。
 - **设置项**（`Setting.h:25-55`）：
-  - `HookAnalysis`（bool 或 `{ByLibrary, ByAddress, LibraryRange[地址区间], LibraryRange[库名列表]}`）
+  - `HookAnalysis`（bool 或 `{ByLibrary, ByAddress, Format, LibraryRange[地址区间], LibraryRange[库名列表]}`；`Format` = `"Text"`（默认）或 `"NDJSON"`，控制 `HookAnalysis.log` 输出格式，2026-07 新增）
   - `DefaultExecutableName` / `DefaultCommandLine`
   - `IgnoreInvalidHookLibs`（数组）
   - `LongStackDump` `EnableHandshakeCheck` `DetachAfterInjection` `CheckInsignificantException` `CheckBreakpoint` `OnlyShowStackFrame` `InfiniteWaitForDebug` `ExceptionReportAlwaysFull` `RemoteDatabaseDump` `GenerateINJ` `AnalyzeCPPException` `OverwriteStartParams` `ShowHookConflictPopup` `AutoTerminate` `LogDaemonInteraction`（全部 bool）
