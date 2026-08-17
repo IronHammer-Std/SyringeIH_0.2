@@ -390,8 +390,9 @@ namespace
 		auto const filter = strcmp(mode, "miss") == 0
 			? std::string("__no_such_module__.dll")
 			: std::string("nametest.exe");
+		// 载荷内统一为模块名数组形式（与内部存储一致）
 		auto const payload =
-			std::string("{\"tool\":\"tests\",\"SnapshotThreadFilter\":\"") + filter + "\"}";
+			std::string("{\"tool\":\"tests\",\"SnapshotThreadFilter\":[\"") + filter + "\"]}";
 
 		char oldCwd[MAX_PATH];
 		GetCurrentDirectoryA(MAX_PATH, oldCwd);
@@ -599,27 +600,25 @@ TEST_CASE(setting_ps51_split_repair)
 TEST_CASE(snapshot_thread_filter_matcher)
 {
 	// 无过滤配置：全部保留（含来源未知）
-	CHECK(!SnapshotThreadFiltered("game.exe", "", ""));
-	CHECK(!SnapshotThreadFiltered("", "", ""));
+	CHECK(!SnapshotThreadFiltered("game.exe", {}, {}));
+	CHECK(!SnapshotThreadFiltered("", {}, {}));
 
 	// exclude 命中 → 过滤；大小写不敏感
-	CHECK(SnapshotThreadFiltered("game.exe", "", "game.exe"));
-	CHECK(SnapshotThreadFiltered("GAME.EXE", "", "game.exe"));
-	CHECK(!SnapshotThreadFiltered("other.dll", "", "game.exe"));
+	CHECK(SnapshotThreadFiltered("game.exe", {}, {"game.exe"}));
+	CHECK(SnapshotThreadFiltered("GAME.EXE", {}, {"game.exe"}));
+	CHECK(!SnapshotThreadFiltered("other.dll", {}, {"game.exe"}));
 
 	// include 非空即白名单：命中保留、未命中过滤
-	CHECK(!SnapshotThreadFiltered("game.exe", "game.exe,SyringeEx.dll", ""));
-	CHECK(!SnapshotThreadFiltered("syringeex.dll", "game.exe,SyringeEx.dll", ""));
-	CHECK(SnapshotThreadFiltered("ntdll.dll", "game.exe", ""));
+	CHECK(!SnapshotThreadFiltered("game.exe", {"game.exe", "SyringeEx.dll"}, {}));
+	CHECK(!SnapshotThreadFiltered("syringeex.dll", {"game.exe", "SyringeEx.dll"}, {}));
+	CHECK(SnapshotThreadFiltered("ntdll.dll", {"game.exe"}, {}));
 
 	// 来源未知：include 下过滤（fail-closed），纯 exclude 下保留
-	CHECK(SnapshotThreadFiltered("", "game.exe", ""));
-	CHECK(!SnapshotThreadFiltered("", "", "game.exe"));
+	CHECK(SnapshotThreadFiltered("", {"game.exe"}, {}));
+	CHECK(!SnapshotThreadFiltered("", {}, {"game.exe"}));
 
-	// 空白容忍；空模式项不参与匹配（列表非空但无有效模式 → 白名单未命中）
-	CHECK(!SnapshotThreadFiltered("game.exe", " game.exe , ntdll.dll ", ""));
-	CHECK(SnapshotThreadFiltered("ntdll.dll", " game.exe , ntdll.dll ", "ntdll.dll"));
-	CHECK(SnapshotThreadFiltered("game.exe", ",,", ""));
+	// 匹配层为精确比较（大小写不敏感）；空白修剪只发生在解析层（SnapshotSplitModuleList）
+	CHECK(SnapshotThreadFiltered("game.exe", {" game.exe "}, {}));
 }
 
 // 逗号分隔模块列表拆分：剔除空白与空项
@@ -634,7 +633,7 @@ TEST_CASE(snapshot_split_module_list)
 	CHECK(SnapshotSplitModuleList(",,").empty());
 }
 
-// 线程来源过滤参数解析：命令行覆盖
+// 线程来源过滤参数解析：命令行逗号分隔串，吃进来立即拆分为数组
 TEST_CASE(setting_snapshot_thread_filter_cli)
 {
 	auto const oldF = SnapshotThreadFilter;
@@ -642,8 +641,11 @@ TEST_CASE(setting_snapshot_thread_filter_cli)
 	UpdateSetting({
 		"-SnapshotThreadFilter=game.exe,SyringeEx.dll",
 		"-SnapshotThreadExclude=ntdll.dll" });
-	CHECK(SnapshotThreadFilter == "game.exe,SyringeEx.dll");
-	CHECK(SnapshotThreadExclude == "ntdll.dll");
+	CHECK(SnapshotThreadFilter.size() == 2);
+	CHECK(SnapshotThreadFilter[0] == "game.exe");
+	CHECK(SnapshotThreadFilter[1] == "SyringeEx.dll");
+	CHECK(SnapshotThreadExclude.size() == 1);
+	CHECK(SnapshotThreadExclude[0] == "ntdll.dll");
 	SnapshotThreadFilter = oldF;
 	SnapshotThreadExclude = oldE;
 }
@@ -663,17 +665,20 @@ TEST_CASE(setting_snapshot_thread_filter_json)
 	FILE* f = fopen("Syringe.json", "wb");
 	if(f)
 	{
-		fputs("{\"SnapshotThreadFilter\":\"game.exe\",\"SnapshotThreadExclude\":\"ntdll.dll\"}", f);
+		fputs("{\"SnapshotThreadFilter\":[\"game.exe\",\"Phobos.dll\"],\"SnapshotThreadExclude\":[\"ntdll.dll\"]}", f);
 		fclose(f);
 	}
 
 	auto const oldF = SnapshotThreadFilter;
 	auto const oldE = SnapshotThreadExclude;
-	SnapshotThreadFilter = "";
-	SnapshotThreadExclude = "";
+	SnapshotThreadFilter = {};
+	SnapshotThreadExclude = {};
 	ReadSetting();
-	CHECK(SnapshotThreadFilter == "game.exe");
-	CHECK(SnapshotThreadExclude == "ntdll.dll");
+	CHECK(SnapshotThreadFilter.size() == 2);
+	CHECK(SnapshotThreadFilter[0] == "game.exe");
+	CHECK(SnapshotThreadFilter[1] == "Phobos.dll");
+	CHECK(SnapshotThreadExclude.size() == 1);
+	CHECK(SnapshotThreadExclude[0] == "ntdll.dll");
 
 	SetCurrentDirectoryA(cwd);
 	SnapshotThreadFilter = oldF;
@@ -690,9 +695,11 @@ TEST_CASE(setting_snapshot_thread_filter_json)
 TEST_CASE(setting_ps51_split_repair_filter)
 {
 	auto const oldF = SnapshotThreadFilter;
-	// 拆分场景：-SnapshotThreadFilter=game + .exe,SyringeEx.dll → game.exe,SyringeEx.dll
+	// 拆分场景：-SnapshotThreadFilter=game + .exe,SyringeEx.dll → [game.exe, SyringeEx.dll]
 	UpdateSetting({ "-SnapshotThreadFilter=game", ".exe,SyringeEx.dll" });
-	CHECK(SnapshotThreadFilter == "game.exe,SyringeEx.dll");
+	CHECK(SnapshotThreadFilter.size() == 2);
+	CHECK(SnapshotThreadFilter[0] == "game.exe");
+	CHECK(SnapshotThreadFilter[1] == "SyringeEx.dll");
 	SnapshotThreadFilter = oldF;
 }
 

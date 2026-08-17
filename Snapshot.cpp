@@ -208,17 +208,17 @@ std::vector<std::string> SnapshotSplitModuleList(std::string_view const list)
 
 bool SnapshotThreadFiltered(
 	std::string_view const sourceModule,
-	std::string_view const includeList,
-	std::string_view const excludeList)
+	std::vector<std::string> const& include,
+	std::vector<std::string> const& exclude)
 {
-	if(sourceModule.empty()) return !includeList.empty(); // 来源未知：白名单下过滤，纯黑名单下保留
+	if(sourceModule.empty()) return !include.empty(); // 来源未知：白名单下过滤，纯黑名单下保留
 
-	auto const matches = [](std::string_view const source, std::string_view const list)
+	auto const matches = [&sourceModule](std::vector<std::string> const& list)
 	{
-		for(auto const& pattern : SnapshotSplitModuleList(list))
+		for(auto const& pattern : list)
 		{
-			if(source.size() == pattern.size() &&
-				_strnicmp(source.data(), pattern.data(), source.size()) == 0)
+			if(sourceModule.size() == pattern.size() &&
+				_strnicmp(sourceModule.data(), pattern.data(), sourceModule.size()) == 0)
 			{
 				return true;
 			}
@@ -226,8 +226,8 @@ bool SnapshotThreadFiltered(
 		return false;
 	};
 
-	if(matches(sourceModule, excludeList)) return true;              // exclude 命中 → 过滤
-	if(!includeList.empty() && !matches(sourceModule, includeList)) return true; // 白名单未命中 → 过滤
+	if(matches(exclude)) return true;              // exclude 命中 → 过滤
+	if(!include.empty() && !matches(include)) return true; // 白名单未命中 → 过滤
 	return false;
 }
 

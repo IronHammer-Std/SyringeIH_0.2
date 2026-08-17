@@ -3,13 +3,14 @@
 #include "Handle.h"
 #include "Support.h"
 #include "Log.h"
+#include "Snapshot.h" // SnapshotSplitModuleList（命令行逗号串 → 模块名数组）
 
 bool ShowHookAnalysis = false;
 std::string DefaultExecName;
 std::string DefaultCmdLine;
 std::string SnapshotFileName;
-std::string SnapshotThreadFilter;
-std::string SnapshotThreadExclude;
+std::vector<std::string> SnapshotThreadFilter;
+std::vector<std::string> SnapshotThreadExclude;
 bool ShowHookAnalysis_ByLib = false;
 bool ShowHookAnalysis_ByAddr = false;
 std::string HookAnalysisFormat = "Text"; // HookAnalysis.Format："Text"（默认）或 "NDJSON"
@@ -215,17 +216,23 @@ void ReadSetting()
         SnapshotFileName = SObj.GetString();
         Log::WriteLine("SnapshotFileName = \"%s\"", SnapshotFileName.c_str());
     }
+    // 线程来源过滤：Syringe.json 用模块名数组（如 ["gamemd.exe","Phobos.dll"]），
+    // 直接读入拆分后的数组；命令行逗号分隔串在 UpdateSetting 中立即拆分。
     SObj = Obj.GetObjectItem("SnapshotThreadFilter");
-    if (SObj.Available() && SObj.IsTypeString())
+    if (SObj.Available() && SObj.IsTypeArray())
     {
-        SnapshotThreadFilter = SObj.GetString();
-        Log::WriteLine("SnapshotThreadFilter = \"%s\"", SnapshotThreadFilter.c_str());
+        SnapshotThreadFilter = SObj.GetArrayString();
+        Log::WriteLine("SnapshotThreadFilter : ");
+        for (auto& s : SnapshotThreadFilter)
+            Log::WriteLine("\t%s", s.c_str());
     }
     SObj = Obj.GetObjectItem("SnapshotThreadExclude");
-    if (SObj.Available() && SObj.IsTypeString())
+    if (SObj.Available() && SObj.IsTypeArray())
     {
-        SnapshotThreadExclude = SObj.GetString();
-        Log::WriteLine("SnapshotThreadExclude = \"%s\"", SnapshotThreadExclude.c_str());
+        SnapshotThreadExclude = SObj.GetArrayString();
+        Log::WriteLine("SnapshotThreadExclude : ");
+        for (auto& s : SnapshotThreadExclude)
+            Log::WriteLine("\t%s", s.c_str());
     }
     SObj = Obj.GetObjectItem("IgnoreInvalidHookLibs");
     if (SObj.Available() && SObj.IsTypeArray())
@@ -455,14 +462,19 @@ else if (v._Starts_with("-" #f "="))\
         else if (v._Starts_with("-SnapshotThreadFilter="))
         {
             v.remove_prefix(22);
-            SnapshotThreadFilter = v;
-            Log::WriteLine("SnapshotThreadFilter = \"%.*s\"", printable(v));
+            // 命令行保持逗号分隔串，吃进来立即拆分为模块名数组
+            SnapshotThreadFilter = SnapshotSplitModuleList(v);
+            Log::WriteLine("SnapshotThreadFilter : ");
+            for (auto& s : SnapshotThreadFilter)
+                Log::WriteLine("\t%.*s", printable(s));
         }
         else if (v._Starts_with("-SnapshotThreadExclude="))
         {
             v.remove_prefix(23);
-            SnapshotThreadExclude = v;
-            Log::WriteLine("SnapshotThreadExclude = \"%.*s\"", printable(v));
+            SnapshotThreadExclude = SnapshotSplitModuleList(v);
+            Log::WriteLine("SnapshotThreadExclude : ");
+            for (auto& s : SnapshotThreadExclude)
+                Log::WriteLine("\t%.*s", printable(s));
         }
         else if (v == "--detach")
         {

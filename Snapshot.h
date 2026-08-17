@@ -82,14 +82,17 @@ DWORD SnapshotBroadcast(std::string_view payload);
 void WriteReportSegment(char const* type, char const* key, char const* jsonText);
 
 // 线程来源过滤（渲染配置）：sourceModule 为线程来源模块名（basename，如 "game.exe"；
-// 空串 = 来源未知）。includeList/excludeList 为逗号分隔的模块名列表。
+// 空串 = 来源未知）。include/exclude 为拆分后的模块名数组（Syringe.json 的数组形式
+// 与命令行逗号分隔串解析后均归一到此）。
 // 规则：命中 exclude → 过滤；否则 include 非空且未命中 → 过滤；其余保留。
 // 来源未知：include 模式下被过滤（fail-closed），纯 exclude 模式下保留。
-// 匹配：模块名整体比较、不区分大小写、容忍列表空白。
+// 匹配：模块名整体比较、不区分大小写。
 bool SnapshotThreadFiltered(
-	std::string_view sourceModule, std::string_view includeList, std::string_view excludeList);
+	std::string_view sourceModule,
+	std::vector<std::string> const& include,
+	std::vector<std::string> const& exclude);
 
-// 把逗号分隔的模块名列表切成模式串（剔除空白与空项）；用于过滤判定与请求段回显
+// 把逗号分隔的模块名列表切成模式串（剔除空白与空项）；命令行解析与请求段回显共用
 std::vector<std::string> SnapshotSplitModuleList(std::string_view list);
 
 // Main 的日志文件选择：在解析 flags/JSON 之前做轻量预扫描

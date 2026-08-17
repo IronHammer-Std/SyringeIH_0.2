@@ -117,14 +117,15 @@ Syringe.json 的 **`HookAnalysis`** 可为布尔（`true` = 按库 + 按地址�
     ⚠ Windows PowerShell 5.1 传参会把 `-X=值.扩展名` 在点号前拆开（`snap_manual.log` 变成
     `snap_manual .log`）。Syringe 已在 flag 解析层自动拼回（日志可见"命令行参数修复"），
     一般无需处理；若遇到异常可给整个 flag 加引号或改用 `--%` / cmd /c（pwsh 7+ 无此问题）。
-  - **`SnapshotThreadFilter` / `SnapshotThreadExclude`**：线程来源过滤（默认 `""` = 不过滤，
-    可用 `-SnapshotThreadFilter=xxx` / `-SnapshotThreadExclude=xxx` 命令行覆盖）。
-    值为**逗号分隔的模块名列表**，模块名 = 线程入口点所在模块的 basename（如 `game.exe`、
-    `SyringeEx.dll`），比较不区分大小写、容忍空白。语义：命中 Exclude → 跳过；Exclude 为空
-    且 Filter 非空时，未命中 Filter 的线程跳过（白名单模式）；两键皆空 = 输出全部线程（原行为）。
-    来源未知（无法解析）的线程：白名单模式下被过滤（fail-closed），纯 Exclude 模式下保留。
-    过滤只裁剪快照的 thread 段与 TEXT 转储段；process 段与异常报告不受影响；摘要行在过滤生效时
-    追加 `（已过滤 X 线程）`。同样经广播载荷逐目标生效。
+  - **`SnapshotThreadFilter` / `SnapshotThreadExclude`**：线程来源过滤（默认 `[]` = 不过滤）。
+    Syringe.json 中为**模块名数组**（如 `["gamemd.exe","Phobos.dll"]`）；命令行保持逗号分隔串
+    `-SnapshotThreadFilter=xxx` / `-SnapshotThreadExclude=xxx`，解析时立即拆分为数组。
+    模块名 = 线程入口点所在模块的 basename（如 `game.exe`、`SyringeEx.dll`），比较不区分
+    大小写。语义：命中 Exclude → 跳过；Exclude 为空且 Filter 非空时，未命中 Filter 的
+    线程跳过（白名单模式）；两键皆空 = 输出全部线程（原行为）。来源未知（无法解析）的线程：
+    白名单模式下被过滤（fail-closed），纯 Exclude 模式下保留。过滤只裁剪快照的 thread 段与
+    TEXT 转储段；process 段与异常报告不受影响；摘要行在过滤生效时追加 `（已过滤 X 线程）`。
+    载荷中同样以模块名数组形式逐目标生效。
 - 随包提供 **`一键快照.bat`**（与 `Syringe.exe` 同目录，GBK 编码）：双击即广播一轮快照；
   文件内注释说明了换成 `--snapshot -SnapshotFileName=xxx.log` 与
   `--snapshot -SnapshotThreadFilter=game.exe,...` 变体的效果。
