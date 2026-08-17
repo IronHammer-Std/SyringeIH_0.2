@@ -64,12 +64,18 @@ int Run(std::string_view const arguments) {
 		// 顺序在 exe 解析之前：两种风格下 --snapshot 都可以不带 exe。
 		if(StackSnapshot) {
 			Log::WriteLine("WinMain: 快照广播模式（StackSnapshot=true），开始广播……");
-			// 载荷：把本机设置原样复述进载荷（首个参数 SnapshotFileName；
+			// 载荷：把本机设置原样复述进载荷（SnapshotFileName + 线程来源过滤键；
 			// 完整的载荷生成方式后续接入）
 			std::string payload;
-			if(!SnapshotFileName.empty()) {
+			if(!SnapshotFileName.empty() || !SnapshotThreadFilter.empty() || !SnapshotThreadExclude.empty())
+			{
 				cJSON* const root = cJSON_CreateObject();
-				cJSON_AddStringToObject(root, "SnapshotFileName", SnapshotFileName.c_str());
+				if(!SnapshotFileName.empty())
+					cJSON_AddStringToObject(root, "SnapshotFileName", SnapshotFileName.c_str());
+				if(!SnapshotThreadFilter.empty())
+					cJSON_AddStringToObject(root, "SnapshotThreadFilter", SnapshotThreadFilter.c_str());
+				if(!SnapshotThreadExclude.empty())
+					cJSON_AddStringToObject(root, "SnapshotThreadExclude", SnapshotThreadExclude.c_str());
 				char* const text = cJSON_PrintUnformatted(root);
 				if(text) {
 					payload = text;

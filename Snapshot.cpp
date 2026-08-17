@@ -180,6 +180,57 @@ void WriteReportSegment(char const* const type, char const* const key, char cons
 	Log::WriteRaw(end.c_str());
 }
 
+std::vector<std::string> SnapshotSplitModuleList(std::string_view const list)
+{
+	std::vector<std::string> ret;
+	size_t begin = 0;
+	while(begin <= list.size())
+	{
+		auto const end = list.find(',', begin);
+		auto item = list.substr(begin,
+			end == std::string_view::npos ? std::string_view::npos : end - begin);
+		while(!item.empty() &&
+			(item.front() == ' ' || item.front() == '\t' || item.front() == '\r' || item.front() == '\n'))
+		{
+			item.remove_prefix(1);
+		}
+		while(!item.empty() &&
+			(item.back() == ' ' || item.back() == '\t' || item.back() == '\r' || item.back() == '\n'))
+		{
+			item.remove_suffix(1);
+		}
+		if(!item.empty()) ret.emplace_back(item);
+		if(end == std::string_view::npos) break;
+		begin = end + 1;
+	}
+	return ret;
+}
+
+bool SnapshotThreadFiltered(
+	std::string_view const sourceModule,
+	std::string_view const includeList,
+	std::string_view const excludeList)
+{
+	if(sourceModule.empty()) return !includeList.empty(); // 来源未知：白名单下过滤，纯黑名单下保留
+
+	auto const matches = [](std::string_view const source, std::string_view const list)
+	{
+		for(auto const& pattern : SnapshotSplitModuleList(list))
+		{
+			if(source.size() == pattern.size() &&
+				_strnicmp(source.data(), pattern.data(), source.size()) == 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	if(matches(sourceModule, excludeList)) return true;              // exclude 命中 → 过滤
+	if(!includeList.empty() && !matches(sourceModule, includeList)) return true; // 白名单未命中 → 过滤
+	return false;
+}
+
 DWORD SnapshotBroadcast(std::string_view const payload)
 {
 	Log::WriteLine(__FUNCTION__ ": 正在枚举 Syringe 进程……");

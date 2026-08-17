@@ -3,6 +3,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <Windows.h>
 
@@ -79,6 +80,17 @@ DWORD SnapshotBroadcast(std::string_view payload);
 // 报告编目：以无时间戳直写输出一个 JSON 段（BEGIN 标记行 / JSON 行 / END 标记行）
 // type: "process" | "thread" | "request"；key: 十进制串（进程/请求段用 seq、线程段用 tid）
 void WriteReportSegment(char const* type, char const* key, char const* jsonText);
+
+// 线程来源过滤（渲染配置）：sourceModule 为线程来源模块名（basename，如 "game.exe"；
+// 空串 = 来源未知）。includeList/excludeList 为逗号分隔的模块名列表。
+// 规则：命中 exclude → 过滤；否则 include 非空且未命中 → 过滤；其余保留。
+// 来源未知：include 模式下被过滤（fail-closed），纯 exclude 模式下保留。
+// 匹配：模块名整体比较、不区分大小写、容忍列表空白。
+bool SnapshotThreadFiltered(
+	std::string_view sourceModule, std::string_view includeList, std::string_view excludeList);
+
+// 把逗号分隔的模块名列表切成模式串（剔除空白与空项）；用于过滤判定与请求段回显
+std::vector<std::string> SnapshotSplitModuleList(std::string_view list);
 
 // Main 的日志文件选择：在解析 flags/JSON 之前做轻量预扫描
 // （误判由 Main 在最终配置确定后的权威切换兜底）

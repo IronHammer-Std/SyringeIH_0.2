@@ -1534,22 +1534,32 @@ bool SyringeDebugger::IsSnapshotBreakin(DEBUG_EVENT const& dbgEvent)
 // 编目输出：人读摘要 → request 段（如有载荷）→ process JSON 段 →
 // 每线程 [ thread JSON 段 → TEXT 转储段（紧邻）]，随后清理 breakin 僵尸线程。
 // 载荷指定 SnapshotFileName 时，本次快照全程内容重定向到该文件。
+// 载荷的 SnapshotThreadFilter/SnapshotThreadExclude 按线程来源过滤输出
+// （只影响 thread 段与 TEXT 段；process 段与异常报告不受影响）。
 DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 {
 	(void)dbgEvent;
 
-	// 先读请求载荷：其中的 SnapshotFileName 决定本次快照全程内容的输出文件
+	// 先读请求载荷：SnapshotFileName 决定输出文件；
+	// SnapshotThreadFilter/SnapshotThreadExclude 决定本次快照输出哪些线程
 	auto const payload = SnapshotReadPayload();
 	std::string snapshotFileName;
+	std::string threadFilter;
+	std::string threadExclude;
 	if(!payload.empty())
 	{
 		if(auto* const parsed = cJSON_Parse(payload.c_str()))
 		{
-			auto* const f = cJSON_GetObjectItem(parsed, "SnapshotFileName");
+			auto* f = cJSON_GetObjectItem(parsed, "SnapshotFileName");
 			if(f && f->valuestring && f->valuestring[0]) snapshotFileName = f->valuestring;
+			f = cJSON_GetObjectItem(parsed, "SnapshotThreadFilter");
+			if(f && f->valuestring && f->valuestring[0]) threadFilter = f->valuestring;
+			f = cJSON_GetObjectItem(parsed, "SnapshotThreadExclude");
+			if(f && f->valuestring && f->valuestring[0]) threadExclude = f->valuestring;
 			cJSON_Delete(parsed);
 		}
 	}
+	auto const filterActive = !threadFilter.empty() || !threadExclude.empty();
 
 	// 重定向：非空且非 syringe.log 时，本次快照全程内容写入指定文件
 	// （syringe.log 句柄保持打开，快照结束后原样恢复，不截断）
@@ -1562,15 +1572,26 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 	}
 
 	Log::WriteLine(__FUNCTION__ ": 收到快照请求，输出全部线程栈快照……");
+	if(filterActive)
+	{
+		Log::WriteLine(__FUNCTION__ ": 线程来源过滤：Filter=\"%s\" Exclude=\"%s\"。",
+			threadFilter.c_str(), threadExclude.c_str());
+	}
 	InitializeSymbols();
 
 	auto const seq = ++ReportEventSeq;
 
-	// 人读摘要（力求简洁）：非 breakin 线程的 TID 与 EIP
+	// 人读摘要（力求简洁）：非 breakin、且通过线程来源过滤的线程 TID 与 EIP
 	std::vector<std::pair<DWORD, DWORD>> tidEip;
+	DWORD filteredCount = 0;
 	for(auto const& [tid, info] : Threads)
 	{
 		if(tid == SnapshotBreakinThreadId) continue;
+		if(SnapshotThreadFiltered(ThreadSourceModule(tid), threadFilter, threadExclude))
+		{
+			++filteredCount;
+			continue;
+		}
 		CONTEXT ctx{};
 		ctx.ContextFlags = CONTEXT_CONTROL;
 		auto const eip = GetThreadContext(info.Thread, &ctx) ? ctx.Eip : 0u;
@@ -1578,6 +1599,10 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 	}
 	{
 		std::string summary = "快照 #" + std::to_string(seq) + "：" + std::to_string(tidEip.size()) + " 线程";
+		if(filteredCount)
+		{
+			summary += "（已过滤 " + std::to_string(filteredCount) + " 线程）";
+		}
 		for(auto const& [tid, eip] : tidEip)
 		{
 			char buf[40];
@@ -1594,13 +1619,25 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 		Log::WriteLine(__FUNCTION__ ": 快照载荷：%u 字节。", (unsigned)payload.size());
 		if(auto* const parsed = cJSON_Parse(payload.c_str()))
 		{
-			// TODO(载荷渲染配置): 载荷携带影响快照呈现形式的配置，
-			// 解析结果在此应用于本次快照（配置 schema 待定）
+			// 载荷渲染配置：SnapshotFileName 与线程来源过滤键已在函数开头解析并应用；
+			// TODO(载荷渲染配置): 其余影响快照呈现形式的配置 schema 待定
 			cJSON* const wrapper = cJSON_CreateObject();
 			cJSON_AddStringToObject(wrapper, "format", "syringeih.report.v1");
 			cJSON_AddStringToObject(wrapper, "type", "request");
 			cJSON_AddNumberToObject(wrapper, "seq", static_cast<double>(seq));
 			cJSON_AddItemToObject(wrapper, "payload", parsed); // 所有权移交 wrapper
+			// 过滤激活时回显规范化 filter（可选字段；原始键仍在 payload 内原样复述）
+			if(filterActive)
+			{
+				cJSON* const filter = JsonAddObject(wrapper, "filter");
+				auto const addList = [](cJSON* const parent, char const* key, std::vector<std::string> const& items)
+				{
+					cJSON* const arr = JsonAddArray(parent, key);
+					for(auto const& s : items) cJSON_AddItemToArray(arr, cJSON_CreateString(s.c_str()));
+				};
+				addList(filter, "include", SnapshotSplitModuleList(threadFilter));
+				addList(filter, "exclude", SnapshotSplitModuleList(threadExclude));
+			}
 			char* const text = cJSON_PrintUnformatted(wrapper);
 			if(text)
 			{
@@ -1620,6 +1657,7 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 	for(auto const& [tid, info] : Threads)
 	{
 		if(tid == SnapshotBreakinThreadId) continue; // breakin 线程自身栈无意义
+		if(SnapshotThreadFiltered(ThreadSourceModule(tid), threadFilter, threadExclude)) continue;
 
 		EmitThreadReportSegment(seq, tid, "snapshot", nullptr);
 

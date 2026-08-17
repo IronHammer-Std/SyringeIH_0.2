@@ -110,15 +110,24 @@ Syringe.json 的 **`HookAnalysis`** 可为布尔（`true` = 按库 + 按地址�
   写入自己的 `syringe.log`，广播器把打断数量/版本/PID 等汇总写入独立的 `syringe_snapshot.log`
   （不接触同目录 syringe 的 `syringe.log`），随后退出（成功返回 0）。
   请求载荷为序列化 JSON 对象（携带影响快照呈现形式的配置；上限 4096 字节，超限截断；
-  每次广播覆写、按目标定向）。首个载荷参数：
+  每次广播覆写、按目标定向）。载荷参数（当前）：
   - **`SnapshotFileName`**：Syringe.json 参数（默认 `""`，可用 `-SnapshotFileName=xxx` 覆盖）；
     广播时原样复述进载荷；接收方非空时，**本次快照的全程内容**（摘要/request/process/thread/TEXT
     各段）输出到该文件而非 `syringe.log`（syringe.log 句柄保持打开，结束后恢复，不截断）。
     ⚠ Windows PowerShell 5.1 传参会把 `-X=值.扩展名` 在点号前拆开（`snap_manual.log` 变成
     `snap_manual .log`）。Syringe 已在 flag 解析层自动拼回（日志可见"命令行参数修复"），
     一般无需处理；若遇到异常可给整个 flag 加引号或改用 `--%` / cmd /c（pwsh 7+ 无此问题）。
+  - **`SnapshotThreadFilter` / `SnapshotThreadExclude`**：线程来源过滤（默认 `""` = 不过滤，
+    可用 `-SnapshotThreadFilter=xxx` / `-SnapshotThreadExclude=xxx` 命令行覆盖）。
+    值为**逗号分隔的模块名列表**，模块名 = 线程入口点所在模块的 basename（如 `game.exe`、
+    `SyringeEx.dll`），比较不区分大小写、容忍空白。语义：命中 Exclude → 跳过；Exclude 为空
+    且 Filter 非空时，未命中 Filter 的线程跳过（白名单模式）；两键皆空 = 输出全部线程（原行为）。
+    来源未知（无法解析）的线程：白名单模式下被过滤（fail-closed），纯 Exclude 模式下保留。
+    过滤只裁剪快照的 thread 段与 TEXT 转储段；process 段与异常报告不受影响；摘要行在过滤生效时
+    追加 `（已过滤 X 线程）`。同样经广播载荷逐目标生效。
 - 随包提供 **`一键快照.bat`**（与 `Syringe.exe` 同目录，GBK 编码）：双击即广播一轮快照；
-  文件内注释说明了换成 `--snapshot -SnapshotFileName=xxx.log` 的效果。
+  文件内注释说明了换成 `--snapshot -SnapshotFileName=xxx.log` 与
+  `--snapshot -SnapshotThreadFilter=game.exe,...` 变体的效果。
 
 ### 快照 / 异常报告格式（skill 接口）v1
 
@@ -144,7 +153,8 @@ BEGIN/END 标记之间的、以 `{` 开头的行即 JSON；`TEXT` 段内为原�
 
 - **request 段**（可选，仅快照；有请求载荷时出现）：`format/type/group/seq` 恒有（`type:"request"`），
   载荷本体嵌套在 `payload` 对象内——广播器写入的序列化 JSON（携带影响快照呈现形式的配置），
-  经接收端净化重序列化为单行，与快照同 `seq`。
+  经接收端净化重序列化为单行，与快照同 `seq`。线程来源过滤激活时另附**可选字段**
+  `filter{include[],exclude[]}`（规范化拆分后的模块名数组；原始键仍在 `payload` 内原样复述）。
 - **process 段**（每次快照一个，`group:"snapshot"`）：`format/type/group/seq/epoch_ms/time/trigger`、
   `syringe{pid,version,protocol}`、`pid/main_tid/exe/path/image_base/image_size/exe_timestamp/crc`、
   `uptime_ms/cpu{user_ms,kernel_ms}/memory{working_set,pagefile,peak_working_set}`、

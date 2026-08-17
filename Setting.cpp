@@ -8,6 +8,8 @@ bool ShowHookAnalysis = false;
 std::string DefaultExecName;
 std::string DefaultCmdLine;
 std::string SnapshotFileName;
+std::string SnapshotThreadFilter;
+std::string SnapshotThreadExclude;
 bool ShowHookAnalysis_ByLib = false;
 bool ShowHookAnalysis_ByAddr = false;
 std::string HookAnalysisFormat = "Text"; // HookAnalysis.Format："Text"（默认）或 "NDJSON"
@@ -212,6 +214,18 @@ void ReadSetting()
     {
         SnapshotFileName = SObj.GetString();
         Log::WriteLine("SnapshotFileName = \"%s\"", SnapshotFileName.c_str());
+    }
+    SObj = Obj.GetObjectItem("SnapshotThreadFilter");
+    if (SObj.Available() && SObj.IsTypeString())
+    {
+        SnapshotThreadFilter = SObj.GetString();
+        Log::WriteLine("SnapshotThreadFilter = \"%s\"", SnapshotThreadFilter.c_str());
+    }
+    SObj = Obj.GetObjectItem("SnapshotThreadExclude");
+    if (SObj.Available() && SObj.IsTypeString())
+    {
+        SnapshotThreadExclude = SObj.GetString();
+        Log::WriteLine("SnapshotThreadExclude = \"%s\"", SnapshotThreadExclude.c_str());
     }
     SObj = Obj.GetObjectItem("IgnoreInvalidHookLibs");
     if (SObj.Available() && SObj.IsTypeArray())
@@ -437,6 +451,18 @@ else if (v._Starts_with("-" #f "="))\
             v.remove_prefix(18);
             SnapshotFileName = v;
             Log::WriteLine("SnapshotFileName = \"%.*s\"", printable(v));
+        }
+        else if (v._Starts_with("-SnapshotThreadFilter="))
+        {
+            v.remove_prefix(22);
+            SnapshotThreadFilter = v;
+            Log::WriteLine("SnapshotThreadFilter = \"%.*s\"", printable(v));
+        }
+        else if (v._Starts_with("-SnapshotThreadExclude="))
+        {
+            v.remove_prefix(23);
+            SnapshotThreadExclude = v;
+            Log::WriteLine("SnapshotThreadExclude = \"%.*s\"", printable(v));
         }
         else if (v == "--detach")
         {

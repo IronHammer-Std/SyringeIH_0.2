@@ -64,6 +64,13 @@ extern std::string DefaultCmdLine;
 // 广播时原样复述进载荷；接收方非空时把本次快照全程内容输出到该文件
 extern std::string SnapshotFileName;
 
+// 快照线程来源过滤（逗号分隔的模块名列表，basename、不区分大小写）：
+// SnapshotThreadFilter 非空即白名单（只输出来源命中列表的线程）；
+// SnapshotThreadExclude 命中即跳过（exclude 优先）。两键皆空 = 不过滤。
+// 与 SnapshotFileName 同通道：Syringe.json / -SnapshotThreadFilter= 命令行 / 广播载荷
+extern std::string SnapshotThreadFilter;
+extern std::string SnapshotThreadExclude;
+
 
 
 #include "Version.h"

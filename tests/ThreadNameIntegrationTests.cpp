@@ -358,6 +358,136 @@ namespace
 		DeleteFileA("snapshot_redirect_test.log");
 		SetCurrentDirectoryA(oldCwd);
 	}
+
+	// 线程来源过滤端到端：载荷携带 SnapshotThreadFilter 时，只有来源命中白名单的
+	// 线程才输出 thread 段与 TEXT 段（process 段与异常报告不受影响）。
+	// mode "miss"：白名单未命中任何线程 → 0 个 snapshot thread 段，摘要含“已过滤”；
+	// mode "hit" ：白名单 = nametest.exe → 主线程保留，source 均为 nametest.exe。
+	void RunFilterScenario(char const* mode)
+	{
+		std::string exeDir, releaseDir;
+		if(!GetTestDirs(exeDir, releaseDir))
+		{
+			printf("  SKIP: 无法定位测试资产目录\n");
+			return;
+		}
+
+		auto const targetPath = exeDir + "\\nametest.exe";
+		if(!PathFileExistsA(targetPath.c_str()))
+		{
+			printf("  SKIP: 缺少 nametest.exe（先构建 Nametest* 工程）\n");
+			return;
+		}
+		auto const srcDll = releaseDir + "\\SyringeEx.dll";
+		auto const dstDll = exeDir + "\\SyringeEx.dll";
+		if(!PathFileExistsA(srcDll.c_str()))
+		{
+			printf("  SKIP: 缺少 SyringeEx.dll（%s）\n", srcDll.c_str());
+			return;
+		}
+		CopyFileA(srcDll.c_str(), dstDll.c_str(), FALSE);
+
+		auto const filter = strcmp(mode, "miss") == 0
+			? std::string("__no_such_module__.dll")
+			: std::string("nametest.exe");
+		auto const payload =
+			std::string("{\"tool\":\"tests\",\"SnapshotThreadFilter\":\"") + filter + "\"}";
+
+		char oldCwd[MAX_PATH];
+		GetCurrentDirectoryA(MAX_PATH, oldCwd);
+		SetCurrentDirectoryA(exeDir.c_str());
+		Log::Open("tests_syringe.log");
+
+		try
+		{
+			SyringeDebugger Debugger{ targetPath };
+			Debugger.FindDLLs();
+
+			std::thread breaker([&]()
+			{
+				Sleep(2500);
+				SnapshotWritePayload(GetCurrentProcessId(), payload);
+				DebugBreakProcess(Debugger.pInfo.hProcess);
+				Sleep(2000);
+				TerminateProcess(Debugger.pInfo.hProcess, 0);
+			});
+
+			Debugger.Run("");
+			breaker.join();
+		}
+		catch(...)
+		{
+			printf("  SKIP: 调试会话异常退出（环境不完整？）\n");
+		}
+
+		Sleep(3500);
+		Log::Flush();
+		Log::Close();
+
+		auto const logText = ReadWholeLog("tests_syringe.log");
+		CHECK(logText.find("收到快照请求") != std::string::npos);
+		CHECK(logText.find("线程来源过滤：") != std::string::npos);
+
+		size_t snapshotThreadSegments = 0;
+		bool allSourcesMatch = true;
+		bool filterEchoSeen = false;
+		for(auto const& seg : ReadJsonSegments("tests_syringe.log"))
+		{
+			auto* const obj = cJSON_Parse(seg.c_str());
+			if(!obj) continue;
+			auto* const type = cJSON_GetObjectItem(obj, "type");
+			auto* const group = cJSON_GetObjectItem(obj, "group");
+			if(type && type->valuestring && strcmp(type->valuestring, "thread") == 0 &&
+				group && group->valuestring && strcmp(group->valuestring, "snapshot") == 0)
+			{
+				++snapshotThreadSegments;
+				auto* const src = cJSON_GetObjectItem(obj, "source");
+				if(!src || !src->valuestring || _stricmp(src->valuestring, "nametest.exe") != 0)
+					allSourcesMatch = false;
+			}
+			if(type && type->valuestring && strcmp(type->valuestring, "request") == 0)
+			{
+				auto* const flt = cJSON_GetObjectItem(obj, "filter");
+				if(flt)
+				{
+					auto* const inc = cJSON_GetObjectItem(flt, "include");
+					if(inc && inc->type == cJSON_Array && cJSON_GetArraySize(inc) >= 1)
+					{
+						auto* const first = cJSON_GetArrayItem(inc, 0);
+						if(first && first->valuestring && strcmp(first->valuestring, filter.c_str()) == 0)
+							filterEchoSeen = true;
+					}
+				}
+			}
+			cJSON_Delete(obj);
+		}
+
+		if(strcmp(mode, "miss") == 0)
+		{
+			CHECK(snapshotThreadSegments == 0);
+			CHECK(logText.find("0 线程（已过滤 ") != std::string::npos);
+		}
+		else
+		{
+			// 白名单 = nametest.exe：至少主线程保留；每个输出的 thread 段 source 均为 nametest.exe。
+			// 注：调试会话中可能有 SyringeEx.dll 的常驻线程等来源，被白名单过滤是预期行为，
+			// 因此这里不断言“无过滤”，而是校验摘要行“快照 #N：M 线程”的 M 与实际段数一致。
+			// （“：”是多字节字符，不能用字节偏移切分，用 sscanf 直接解析数字）
+			CHECK(snapshotThreadSegments >= 1);
+			CHECK(allSourcesMatch);
+			unsigned parsedCount = 0;
+			auto const pos = logText.find("快照 #");
+			if(pos != std::string::npos &&
+				sscanf(logText.c_str() + pos, "快照 #%*u：%u", &parsedCount) == 1)
+			{
+				CHECK(parsedCount == snapshotThreadSegments);
+			}
+		}
+		CHECK(filterEchoSeen);
+
+		DeleteFileA("tests_syringe.log");
+		SetCurrentDirectoryA(oldCwd);
+	}
 }
 
 // 载荷映射单元往返：注册 → 写入 → 读取 → 超限截断 → 空载荷清除
@@ -463,6 +593,119 @@ TEST_CASE(setting_ps51_split_repair)
 	CHECK(SnapshotFileName == old);
 
 	SnapshotFileName = old;
+}
+
+// 线程来源过滤判定：纯函数语义（exclude 优先 / 白名单 / 未知来源 / 大小写）
+TEST_CASE(snapshot_thread_filter_matcher)
+{
+	// 无过滤配置：全部保留（含来源未知）
+	CHECK(!SnapshotThreadFiltered("game.exe", "", ""));
+	CHECK(!SnapshotThreadFiltered("", "", ""));
+
+	// exclude 命中 → 过滤；大小写不敏感
+	CHECK(SnapshotThreadFiltered("game.exe", "", "game.exe"));
+	CHECK(SnapshotThreadFiltered("GAME.EXE", "", "game.exe"));
+	CHECK(!SnapshotThreadFiltered("other.dll", "", "game.exe"));
+
+	// include 非空即白名单：命中保留、未命中过滤
+	CHECK(!SnapshotThreadFiltered("game.exe", "game.exe,SyringeEx.dll", ""));
+	CHECK(!SnapshotThreadFiltered("syringeex.dll", "game.exe,SyringeEx.dll", ""));
+	CHECK(SnapshotThreadFiltered("ntdll.dll", "game.exe", ""));
+
+	// 来源未知：include 下过滤（fail-closed），纯 exclude 下保留
+	CHECK(SnapshotThreadFiltered("", "game.exe", ""));
+	CHECK(!SnapshotThreadFiltered("", "", "game.exe"));
+
+	// 空白容忍；空模式项不参与匹配（列表非空但无有效模式 → 白名单未命中）
+	CHECK(!SnapshotThreadFiltered("game.exe", " game.exe , ntdll.dll ", ""));
+	CHECK(SnapshotThreadFiltered("ntdll.dll", " game.exe , ntdll.dll ", "ntdll.dll"));
+	CHECK(SnapshotThreadFiltered("game.exe", ",,", ""));
+}
+
+// 逗号分隔模块列表拆分：剔除空白与空项
+TEST_CASE(snapshot_split_module_list)
+{
+	auto const v = SnapshotSplitModuleList(" game.exe , SyringeEx.dll,ntdll.dll ");
+	CHECK(v.size() == 3);
+	CHECK(v[0] == "game.exe");
+	CHECK(v[1] == "SyringeEx.dll");
+	CHECK(v[2] == "ntdll.dll");
+	CHECK(SnapshotSplitModuleList("").empty());
+	CHECK(SnapshotSplitModuleList(",,").empty());
+}
+
+// 线程来源过滤参数解析：命令行覆盖
+TEST_CASE(setting_snapshot_thread_filter_cli)
+{
+	auto const oldF = SnapshotThreadFilter;
+	auto const oldE = SnapshotThreadExclude;
+	UpdateSetting({
+		"-SnapshotThreadFilter=game.exe,SyringeEx.dll",
+		"-SnapshotThreadExclude=ntdll.dll" });
+	CHECK(SnapshotThreadFilter == "game.exe,SyringeEx.dll");
+	CHECK(SnapshotThreadExclude == "ntdll.dll");
+	SnapshotThreadFilter = oldF;
+	SnapshotThreadExclude = oldE;
+}
+
+// 线程来源过滤参数解析：Syringe.json
+TEST_CASE(setting_snapshot_thread_filter_json)
+{
+	char cwd[MAX_PATH];
+	_getcwd(cwd, MAX_PATH);
+
+	char tmpDir[MAX_PATH];
+	GetTempPathA(MAX_PATH, tmpDir);
+	strcat_s(tmpDir, "syringe_setting_filter_test");
+	CreateDirectoryA(tmpDir, nullptr);
+	SetCurrentDirectoryA(tmpDir);
+
+	FILE* f = fopen("Syringe.json", "wb");
+	if(f)
+	{
+		fputs("{\"SnapshotThreadFilter\":\"game.exe\",\"SnapshotThreadExclude\":\"ntdll.dll\"}", f);
+		fclose(f);
+	}
+
+	auto const oldF = SnapshotThreadFilter;
+	auto const oldE = SnapshotThreadExclude;
+	SnapshotThreadFilter = "";
+	SnapshotThreadExclude = "";
+	ReadSetting();
+	CHECK(SnapshotThreadFilter == "game.exe");
+	CHECK(SnapshotThreadExclude == "ntdll.dll");
+
+	SetCurrentDirectoryA(cwd);
+	SnapshotThreadFilter = oldF;
+	SnapshotThreadExclude = oldE;
+
+	char jsonPath[MAX_PATH];
+	strcpy_s(jsonPath, tmpDir);
+	strcat_s(jsonPath, "\\Syringe.json");
+	DeleteFileA(jsonPath);
+	RemoveDirectoryA(tmpDir);
+}
+
+// Windows PowerShell 5.1 拆分修复同样作用于过滤列表（.exe 位于列表中间）
+TEST_CASE(setting_ps51_split_repair_filter)
+{
+	auto const oldF = SnapshotThreadFilter;
+	// 拆分场景：-SnapshotThreadFilter=game + .exe,SyringeEx.dll → game.exe,SyringeEx.dll
+	UpdateSetting({ "-SnapshotThreadFilter=game", ".exe,SyringeEx.dll" });
+	CHECK(SnapshotThreadFilter == "game.exe,SyringeEx.dll");
+	SnapshotThreadFilter = oldF;
+}
+
+// 线程来源过滤端到端：白名单未命中任何线程 → 0 个 snapshot thread 段
+TEST_CASE(snapshot_thread_filter_miss)
+{
+	RunFilterScenario("miss");
+}
+
+// 线程来源过滤端到端：白名单 = nametest.exe → 主线程保留且 source 为 nametest.exe
+TEST_CASE(snapshot_thread_filter_hit)
+{
+	RunFilterScenario("hit");
 }
 
 // 引号感知切词：带空格的 flag 值合并为单 token，引号自身被剔除
