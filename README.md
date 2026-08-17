@@ -1,6 +1,6 @@
-# Syringe0721
+# SyringeIH
 
-SyringeIH —— 基于 Ares-Developers/Syringe 演化的 DLL 注入与运行时钩子加载器（版本线 0.3.x）。
+SyringeIH —— 基于 Ares-Developers/Syringe 演化的 DLL 注入与运行时钩子加载器。
 本仓库已并入 SyringeEx（Phobos-developers/SyringeEx）相对 Ares/Syringe master 的 22 个 commit 所引入的功能。
 
 ## 命令行用法
@@ -23,7 +23,13 @@ SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=
 - **`--nowait`**：等价于 `-WaitForProcessExit=false`。分离后不等待目标进程退出，Syringe 立即结束。
   默认（无 `--nowait`）在分离后等待目标进程退出并记录退出码。
 - **`--handshakes`**：别名，等价于 `-EnableHandshakeCheck=true`（SyringeIH 默认即开启握手检查）。
-- **`--snapshot`**：快照广播模式（等价于 `-StackSnapshot=true`；Syringe.json 中 `"StackSnapshot": true` 亦可触发）。
+- 另新增 JSON 设置项 **`WaitForProcessExit`**（默认 true）。
+
+## 快照模式
+
+### 快照模式的命令行
+
+**`--snapshot`**：快照广播模式（等价于 `-StackSnapshot=true`；Syringe.json 中 `"StackSnapshot": true` 亦可触发）。
   此模式下 Syringe 不启动游戏、不走注入流程：枚举本机所有运行中的 SyringeIH，按身份映射
   （`Local\SyringeIH.Snapshot.{pid}`，内含 Magic/协议版本/软件版本/GamePid + 请求载荷区）三段验证——
   是 SyringeIH、协议版本受支持（协议只增不减，当前 1 为兼容起点，更早版本放弃）——之后向每个
@@ -38,9 +44,10 @@ SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=
     ⚠ Windows PowerShell 5.1 传参会把 `-X=值.扩展名` 在点号前拆开（`snap_manual.log` 变成
     `snap_manual .log`）。Syringe 已在 flag 解析层自动拼回（日志可见"命令行参数修复"），
     一般无需处理；若遇到异常可给整个 flag 加引号或改用 `--%` / cmd /c（pwsh 7+ 无此问题）。
-- 另新增 JSON 设置项 **`WaitForProcessExit`**（默认 true）。
 
-## 快照 / 异常报告格式（skill 接口）v1
+
+
+### 快照 / 异常报告格式（skill 接口）v1
 
 目标 SyringeIH 会在自己的 `syringe.log` 中输出结构化报告段（`format = syringeih.report.v1`），
 供下游 skill / AI agent 解析。栈转储文本**不结构化**（外部 DLL 可在其中夹带任意注释，
