@@ -29,6 +29,7 @@ bool LogDaemonInteraction = false;
 bool AutoTerminate = false;
 bool WaitForProcessExit = true;
 bool StackSnapshot = false;
+bool UseSyringeExCommandLine = false; // 命令行解析风格：false=IH 风格（引号 exe + 尾部参数）；true=SyringeEx 风格（首个非 '-' token 为 exe，flag 任意位置，游戏参数仅来自 --args=）
 std::vector<std::string> IncludeDLLs;
 
 std::unordered_map<std::string, ExtensionPack> ExtPacks;
@@ -316,6 +317,12 @@ void ReadSetting()
         StackSnapshot = SObj.GetBool();
         Log::WriteLine("StackSnapshot = %s", CStrBoolImpl(StackSnapshot, StrBoolType::Str_true_false));
     }
+    SObj = Obj.GetObjectItem("UseSyringeExCommandLine");
+    if (SObj.Available() && SObj.IsTypeBool())
+    {
+        UseSyringeExCommandLine = SObj.GetBool();
+        Log::WriteLine("UseSyringeExCommandLine = %s", CStrBoolImpl(UseSyringeExCommandLine, StrBoolType::Str_true_false));
+    }
     SObj = Obj.GetObjectItem("ExtensionPacks");
     if (SObj.Available() && SObj.IsTypeObject())
     {
@@ -448,6 +455,12 @@ else if (v._Starts_with("-" #f "="))\
         {
             StackSnapshot = true;
             Log::WriteLine("StackSnapshot = true (--snapshot)");
+        }
+        else if (v._Starts_with("-UseSyringeExCommandLine"))
+        {
+            // 命令行不允许设置解析风格开关（避免"鸡生蛋"：风格未定无法解析命令行）；
+            // 仅 Syringe.json 的 UseSyringeExCommandLine 可配置。
+            Log::WriteLine("命令行不允许设置 UseSyringeExCommandLine（仅 Syringe.json 可配置），忽略 \"%.*s\"", printable(v));
         }
         UpdateBoolImpl(LongStackDump)
         UpdateBoolImpl(EnableHandshakeCheck)

@@ -46,6 +46,7 @@ extern bool AutoTerminate;
 extern bool LogDaemonInteraction;
 extern bool WaitForProcessExit;
 extern bool StackSnapshot;
+extern bool UseSyringeExCommandLine;
 extern std::vector<std::string> IncludeDLLs;
 extern std::set<HookIdx> GlobalDisableHooks;
 extern std::set<HookIdx> GlobalEnableHooks;

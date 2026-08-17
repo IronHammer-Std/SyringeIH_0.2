@@ -606,3 +606,176 @@ TEST_CASE(args_flag_whitespace_only_tail)
 		merged.append(cmd.arguments.data(), cmd.arguments.size());
 	CHECK(merged == "-OLD");
 }
+
+// ============ UseSyringeExCommandLine（SyringeEx 风格命令行） ============
+
+// SyringeEx 风格：全行分类（flag 任意位置；首个非 '-' token 为 exe；带空格引号 exe）
+TEST_CASE(classify_syringeex_line)
+{
+	auto const parts = ClassifySyringeexLine("-i=a.dll gamemd.exe -CD -i=b.dll");
+	CHECK(parts.executable == "gamemd.exe");
+	CHECK(parts.flags.size() == 3);
+	CHECK(parts.flags[0] == "-i=a.dll");
+	CHECK(parts.flags[1] == "-CD");
+	CHECK(parts.flags[2] == "-i=b.dll");
+
+	auto const parts2 = ClassifySyringeexLine("\"C:\\game dir\\gamemd.exe\" -CD");
+	CHECK(parts2.executable == "C:\\game dir\\gamemd.exe");
+	CHECK(parts2.flags.size() == 1);
+	CHECK(parts2.flags[0] == "-CD");
+
+	auto const parts3 = ClassifySyringeexLine("--snapshot");
+	CHECK(parts3.executable.empty());
+	CHECK(parts3.flags.size() == 1);
+	CHECK(parts3.flags[0] == "--snapshot");
+}
+
+// SyringeEx 风格解析：无 JSON 默认时，游戏参数仅来自 --args= 内容
+TEST_CASE(resolve_syringeex_command_basic)
+{
+	auto const parts = ClassifySyringeexLine("gamemd.exe -i=x.dll");
+	auto const resolved = ResolveSyringeexCommand(parts, "-CD");
+	CHECK(resolved.executable == "gamemd.exe");
+	CHECK(resolved.arguments == "-CD");
+}
+
+// OverwriteStartParams=true → JSON 默认覆盖命令行 exe（--args= 仍拼在前）
+TEST_CASE(resolve_syringeex_command_overwrite)
+{
+	auto const oldOver = OverwriteStartParams;
+	auto const oldExe = DefaultExecName;
+	auto const oldCmd = DefaultCmdLine;
+	OverwriteStartParams = true;
+	DefaultExecName = "gamemd.exe";
+	DefaultCmdLine = "-WIN";
+
+	auto const parts = ClassifySyringeexLine("other.exe -i=x.dll");
+	auto const resolved = ResolveSyringeexCommand(parts, "-CD");
+	CHECK(resolved.executable == "gamemd.exe");
+	CHECK(resolved.arguments == "-CD -WIN");
+
+	OverwriteStartParams = oldOver;
+	DefaultExecName = oldExe;
+	DefaultCmdLine = oldCmd;
+}
+
+// 命令行无 exe 且无 JSON 默认 → 抛 invalid_command_arguments
+TEST_CASE(resolve_syringeex_command_no_exe)
+{
+	auto const oldOver = OverwriteStartParams;
+	auto const oldExe = DefaultExecName;
+	OverwriteStartParams = false;
+	DefaultExecName.clear();
+
+	auto const parts = ClassifySyringeexLine("--snapshot");
+	bool threw = false;
+	try { auto const r = ResolveSyringeexCommand(parts, ""); (void)r; }
+	catch (invalid_command_arguments const&) { threw = true; }
+	CHECK(threw);
+
+	OverwriteStartParams = oldOver;
+	DefaultExecName = oldExe;
+}
+
+// 命令行无 exe 但 DefaultExecutableName 非空 → JSON 兜底（与 IH 风格一致）
+TEST_CASE(resolve_syringeex_command_json_fallback)
+{
+	auto const oldOver = OverwriteStartParams;
+	auto const oldExe = DefaultExecName;
+	auto const oldCmd = DefaultCmdLine;
+	OverwriteStartParams = false;
+	DefaultExecName = "gamemd.exe";
+	DefaultCmdLine = "-WIN";
+
+	auto const parts = ClassifySyringeexLine("--snapshot");
+	auto const resolved = ResolveSyringeexCommand(parts, "-CD");
+	CHECK(resolved.executable == "gamemd.exe");
+	CHECK(resolved.arguments == "-CD -WIN");
+
+	OverwriteStartParams = oldOver;
+	DefaultExecName = oldExe;
+	DefaultCmdLine = oldCmd;
+}
+
+// 开关仅 Syringe.json 可配：命令行 -UseSyringeExCommandLine=... 被拒绝且不生效（双向）
+TEST_CASE(setting_syringeex_mode_cli_rejected)
+{
+	auto const old = UseSyringeExCommandLine;
+	UseSyringeExCommandLine = false;
+	UpdateSetting({ "-UseSyringeExCommandLine=true" });
+	CHECK(!UseSyringeExCommandLine);
+	UseSyringeExCommandLine = true;
+	UpdateSetting({ "-UseSyringeExCommandLine=false" });
+	CHECK(UseSyringeExCommandLine);
+	UseSyringeExCommandLine = old;
+}
+
+// 开关 JSON 读取：Syringe.json 的 UseSyringeExCommandLine
+TEST_CASE(setting_syringeex_mode_json)
+{
+	char cwd[MAX_PATH];
+	_getcwd(cwd, MAX_PATH);
+
+	char tmpDir[MAX_PATH];
+	GetTempPathA(MAX_PATH, tmpDir);
+	strcat_s(tmpDir, "syringe_synex_mode_test");
+	CreateDirectoryA(tmpDir, nullptr);
+	SetCurrentDirectoryA(tmpDir);
+
+	FILE* f = fopen("Syringe.json", "wb");
+	if (f)
+	{
+		fputs("{\"UseSyringeExCommandLine\":true}", f);
+		fclose(f);
+	}
+
+	auto const old = UseSyringeExCommandLine;
+	UseSyringeExCommandLine = false;
+	ReadSetting();
+	CHECK(UseSyringeExCommandLine);
+
+	SetCurrentDirectoryA(cwd);
+	UseSyringeExCommandLine = old;
+
+	char jsonPath[MAX_PATH];
+	strcpy_s(jsonPath, tmpDir);
+	strcat_s(jsonPath, "\\Syringe.json");
+	DeleteFileA(jsonPath);
+	RemoveDirectoryA(tmpDir);
+}
+
+// -i= 注入白名单通配模式匹配（SyringeEx 对齐；PathMatchSpecA 语义实测：* 跨 \、大小写不敏感、
+// 空模式命中一切故显式跳过）
+TEST_CASE(match_include_dlls_patterns)
+{
+	// basename 通配
+	CHECK(MatchIncludeDLLs("Phobos.dll", "C:\\game\\Phobos.dll", "Phobos.dll", { "*.dll" }));
+	CHECK(MatchIncludeDLLs("Phobos.dll", "C:\\game\\Phobos.dll", "Phobos.dll", { "Phobos*.dll" }));
+	CHECK(MatchIncludeDLLs("Phobos.dll", "C:\\game\\Phobos.dll", "Phobos.dll", { "Phobos.dll" }));
+	CHECK(MatchIncludeDLLs("A1.dll", "C:\\game\\A1.dll", "A1.dll", { "??.dll" }));
+	CHECK(!MatchIncludeDLLs("ABC.dll", "C:\\game\\ABC.dll", "ABC.dll", { "??.dll" }));
+	CHECK(!MatchIncludeDLLs("ARES.dll", "C:\\game\\ARES.dll", "ARES.dll", { "Phobos*.dll" }));
+	CHECK(!MatchIncludeDLLs("X.dat", "C:\\game\\X.dat", "X.dat", { "*.dll" }));
+	// 大小写不敏感
+	CHECK(MatchIncludeDLLs("PHOBOS.DLL", "C:\\GAME\\PHOBOS.DLL", "phobos.dll", { "phobos*.dll" }));
+	// 多模式并集
+	CHECK(MatchIncludeDLLs("X.dll", "C:\\game\\X.dll", "X.dll", { "A.dll", "*.dll" }));
+	CHECK(!MatchIncludeDLLs("X.dat", "C:\\game\\X.dat", "X.dat", { "A.dll", "*.dll" }));
+	// 空列表 = 不过滤
+	CHECK(MatchIncludeDLLs("X.dll", "C:\\game\\X.dll", "X.dll", {}));
+	// 空模式串 = 永不命中（PathMatchSpecA 空模式命中一切，已显式跳过）
+	CHECK(!MatchIncludeDLLs("X.dll", "C:\\game\\X.dll", "X.dll", { "" }));
+	// 绝对路径精确模式（无通配即精确匹配）
+	CHECK(MatchIncludeDLLs("X.dll", "C:\\game\\X.dll", "X.dll", { "C:\\game\\X.dll" }));
+	// 目录成分模式 → exe 相对路径（basename 对 "Patches\\X.dll" 不命中）
+	CHECK(MatchIncludeDLLs("X.dll", "C:\\game\\Patches\\X.dll", "Patches\\X.dll", { "Patches\\X.dll" }));
+	CHECK(MatchIncludeDLLs("X.dll", "C:\\game\\Patches\\X.dll", "Patches\\X.dll", { "Patches\\*.dll" }));
+	CHECK(!MatchIncludeDLLs("X.dll", "C:\\game\\Patches\\X.dll", "Patches\\X.dll", { "Patches\\Y.dll" }));
+	// * 跨 \（整串级，实测）
+	CHECK(MatchIncludeDLLs("X.dll", "C:\\game\\Patches\\X.dll", "Patches\\X.dll", { "*\\X.dll" }));
+	// 带空格引号值（切词后单 token，空格为字面量）
+	CHECK(MatchIncludeDLLs("my mod.dll", "C:\\game\\my mod.dll", "my mod.dll", { "my mod.dll" }));
+	CHECK(!MatchIncludeDLLs("my mod.dll", "C:\\game\\my mod.dll", "my mod.dll", { "*.txt" }));
+	// 根目录扫描（relPath 无目录成分）时，目录模式不误命中
+	CHECK(!MatchIncludeDLLs("X.dll", "C:\\game\\X.dll", "X.dll", { "Patches\\X.dll" }));
+}

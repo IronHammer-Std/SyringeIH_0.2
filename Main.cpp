@@ -27,7 +27,7 @@ int Run(std::string_view const arguments) {
 
 	try
 	{
-		// --args= 提取：取最后一个、展开其内容拼到游戏参数最前面；
+		// --args= 提取（两种解析风格共用）：取最后一个、展开其内容拼到游戏参数最前面；
 		// 片段无论出现在 exe 前还是后，都从命令行中移除。
 		std::string ArgsFromFlag;
 		auto const cleaned = ExtractArgsFlag(arguments, ArgsFromFlag);
@@ -36,11 +36,20 @@ int Run(std::string_view const arguments) {
 			Log::WriteLine("WinMain: 已提取 --args= 参数： \"%.*s\"", printable(ArgsFromFlag));
 		}
 
-		// 快照广播模式可能不带 executable（如 Syringe.exe --snapshot），
-		// 不能依赖 get_command_line 成功：先解析 flags（exe 起始引号之前；
-		// flag 值上紧贴的引号不算边界，由 FindExecutableQuote 判定）。
-		auto const end_flags = FindExecutableQuote(cleaned);
-		UpdateSetting(SplitView(trim(cleaned.substr(0, end_flags))));
+		SyringeexLineParts syringeexParts;
+		if (UseSyringeExCommandLine)
+		{
+			// SyringeEx 风格：全行 token 分类（首个非 '-' token 为 exe，其余全部是 flag）
+			syringeexParts = ClassifySyringeexLine(cleaned);
+			UpdateSetting(syringeexParts.flags);
+		}
+		else
+		{
+			// IH 风格：flags 只取 exe 起始引号之前（引号感知切词；
+			// flag 值上紧贴的引号不算边界，由 FindExecutableQuote 判定）。
+			auto const end_flags = FindExecutableQuote(cleaned);
+			UpdateSetting(SplitView(trim(cleaned.substr(0, end_flags))));
+		}
 
 		// 权威兜底：预扫描可能误判（JSON 注释等），按最终配置切换日志文件
 		auto const predictedSnapshot =
@@ -51,7 +60,8 @@ int Run(std::string_view const arguments) {
 			Log::WriteLine("WinMain: 已按最终配置切换日志文件。");
 		}
 
-		// 快照广播模式：不启动游戏、不走注入流程，广播一圈打断后退出
+		// 快照广播模式：不启动游戏、不走注入流程，广播一圈打断后退出。
+		// 顺序在 exe 解析之前：两种风格下 --snapshot 都可以不带 exe。
 		if(StackSnapshot) {
 			Log::WriteLine("WinMain: 快照广播模式（StackSnapshot=true），开始广播……");
 			// 载荷：把本机设置原样复述进载荷（首个参数 SnapshotFileName；
@@ -73,17 +83,32 @@ int Run(std::string_view const arguments) {
 			return static_cast<int>(code);
 		}
 
-		auto const command = get_command_line(cleaned);
-		//Log::WriteLine("WinMain: 调用选项为： \"%.*s\"", printable(command.flags));
+		// exe / 游戏参数解析（快照早退之后，此处分支可能因缺 exe 抛用法错误）
+		std::string_view exe;
+		std::string finalArguments;
+		if (UseSyringeExCommandLine)
+		{
+			// SyringeEx 风格：exe 优先取命令行首个非 '-' token；OverwriteStartParams=true
+			// 或命令行无 exe 时保留 Syringe.json 的 DefaultExecutableName/DefaultCommandLine
+			// 语义（与 IH 风格一致）；游戏参数仅来自 --args= 内容。
+			auto const resolved = ResolveSyringeexCommand(syringeexParts, ArgsFromFlag);
+			exe = resolved.executable;
+			finalArguments = std::move(resolved.arguments);
+		}
+		else
+		{
+			auto const command = get_command_line(cleaned);
+			exe = command.executable;
 
-		// 合并游戏参数：--args= 内容在前 + 引号后的尾巴在后（空格分隔）
-		std::string finalArguments(ArgsFromFlag);
-		if (!finalArguments.empty() && !command.arguments.empty())
-			finalArguments += ' ';
-		if (!command.arguments.empty())
-			finalArguments.append(command.arguments.data(), command.arguments.size());
+			// 合并游戏参数：--args= 内容在前 + 引号后的尾巴在后（空格分隔）
+			finalArguments = ArgsFromFlag;
+			if (!finalArguments.empty() && !command.arguments.empty())
+				finalArguments += ' ';
+			if (!command.arguments.empty())
+				finalArguments.append(command.arguments.data(), command.arguments.size());
+		}
 
-		Log::WriteLine("WinMain: 可执行文件为： \"%.*s\"", printable(command.executable));
+		Log::WriteLine("WinMain: 可执行文件为： \"%.*s\"", printable(exe));
 		Log::WriteLine("WinMain: 程序启动参数为： \"%.*s\"", printable(finalArguments));
 
 		/*
@@ -97,10 +122,10 @@ int Run(std::string_view const arguments) {
 
 		Log::WriteLine(
 			"WinMain: 开始载入可执行文件： \"%.*s\"……",
-			printable(command.executable));
+			printable(exe));
 		Log::WriteLine();
 
-		SyringeDebugger Debugger{ command.executable };
+		SyringeDebugger Debugger{ exe };
 		failure = "无法运行可执行文件。";
 
 		Log::WriteLine("WinMain: SyringeDebugger::FindDLLs();");
@@ -132,8 +157,12 @@ int Run(std::string_view const arguments) {
 	catch(invalid_command_arguments const&)
 	{
 		MessageBoxA(
-			nullptr, "Syringe 不能直接运行.\n\n"
-			"使用方法:\n在Syringe.json中设置DefaultExecutableName为可用值\n或通过命令行或BAT文件：\nSyringe.exe \"<exe name>\" <arguments>",
+			nullptr, UseSyringeExCommandLine
+				? "Syringe 不能直接运行.\n\n"
+				  "使用方法（UseSyringeExCommandLine=true，SyringeEx 风格）:\n"
+				  "Syringe.exe <exe name> [-i=<injectedfile.dll> ...] [--args=\"<arguments>\"]"
+				: "Syringe 不能直接运行.\n\n"
+				  "使用方法:\n在Syringe.json中设置DefaultExecutableName为可用值\n或通过命令行或BAT文件：\nSyringe.exe \"<exe name>\" <arguments>",
 			VersionString, MB_OK | MB_ICONINFORMATION);
 
 		Log::WriteLine(

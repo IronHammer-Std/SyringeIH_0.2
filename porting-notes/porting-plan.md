@@ -41,6 +41,9 @@ SyringeIH 保留自己的品牌、版本号与构建配置。
 1. **⑩ 调试循环修复**：`EXIT_PROCESS_DEBUG_EVENT` 与 `RIP_EVENT` 分支 break 前补 `ContinueDebugEvent`。
 2. **① `-i=` 白名单**：`Setting.cpp` 解析 `-i=<dll>` 累积到 `IncludeDLLs` 列表；`FindDLLsLoop`
    若列表非空则只扫描列表内 DLL（保留握手/段检查）。
+   【2026-07 调整：匹配由"字面相等"改为 SyringeEx 通配模式（`PathMatchSpecA`，`MatchIncludeDLLs`，
+   对文件名 / 绝对路径 / exe 相对路径匹配；空模式串不命中；`-i="my mod.dll"` 引号含空格值可用；
+   日志文案改为"不匹配 -i= 白名单模式，跳过"。详见 README "移植自 SyringeEx 的新增项"。】
 3. **⑤ detach 语义**：`--detach` 映射 `DetachAfterInjection=true`；新增 `WaitForProcessExit`
    （默认 true）；detach 路径把 `CloseHandle(pInfo.hProcess)` 移到 `DebugActiveProcessStop` 之后，
    需要等待时 `WaitForSingleObject(pInfo.hProcess)`；`--nowait` → `WaitForProcessExit=false`。

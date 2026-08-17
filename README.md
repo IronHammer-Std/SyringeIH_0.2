@@ -8,7 +8,7 @@ SyringeIH —— 基于 Ares-Developers/Syringe 演化的 DLL 注入与运行时
 语法（沿用 SyringeIH 原有格式）：
 
 ```
-Syringe.exe [-Name=true|false ...] [-Ext=扩展包名] [-i=<dll> ...] [--args="<游戏参数>"] "<exe name>" <游戏参数>
+Syringe.exe [-Name=true|false ...] [-Ext=扩展包名] [-i=<模式> ...] [--args="<游戏参数>"] "<exe name>" <游戏参数>
 ```
 
 SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=`、`-DetachAfterInjection=`、
@@ -24,10 +24,46 @@ flags 段支持**引号感知切词**：引号紧贴值书写（如 `-SnapshotFi
   引号后尾巴在后，空格分隔），`--args="..."` 片段本身不再传给游戏。
   裸形式 `--args=xxx`（无引号）取到下一个空白为止；`--args` 不带 `=` 不识别。
 
+### SyringeEx 风格命令行开关（`UseSyringeExCommandLine`）
+
+Syringe.json 新增开关 **`UseSyringeExCommandLine`**（默认 `false`）。**仅允许在 Syringe.json
+中配置**，命令行写 `-UseSyringeExCommandLine=...` 会被拒绝并记入日志（解析风格未定前无法解析
+命令行，属有意设计）。开启后改用 SyringeEx 的命令行语法：
+
+```
+Syringe.exe <exe name> [-i=<injectedfile.dll> ...] [--args="<arguments>"]
+```
+
+- **exe 识别**：首个不以 `-` 开头的 token（不要求引号；路径含空格时整体加引号），可出现在任意位置；
+- **flag 位置**：任意位置（exe 前、后皆可），非 `--args=` 的裸 token 一律按 flag 处理——
+  例如 `Syringe.exe gamemd.exe -CD` 中 `-CD` 是 Syringe 的 flag（未知项被忽略），**不会传给游戏**；
+- **游戏参数**：仅来自 `--args="..."`（取最后一个）；
+- **JSON 语义保留**：`OverwriteStartParams=true`（且 `DefaultExecutableName`/`DefaultCommandLine`
+  均非空）时仍优先使用 JSON 默认；命令行无 exe 时同样回退到 `DefaultExecutableName`；
+- **快照模式不受影响**：`--snapshot` / `-StackSnapshot=true` 两种风格下都可无 exe 广播；
+- `-i=` 已对齐 SyringeEx 的通配模式语义（详见下文"移植自 SyringeEx 的新增项"）；仅匹配位置
+  保持 IH 的 token 起始（不对齐 SyringeEx 的 `.find()` 宽容匹配）。
+
 ### 移植自 SyringeEx 的新增项
 
-- **`-i=<dll>`（可重复）**：注入白名单。出现时只注入列出的 DLL（按文件名或路径、大小写不敏感匹配；
-  `SyringeEx.dll` 始终载入）；不出现时按默认策略扫描目录（含 `\Patches\` 与扩展包）。
+- **`-i=<模式>`（可重复）**：注入白名单，已对齐 SyringeEx 的**通配模式**语义。每个 `-i=` 值是一个
+  通配模式（`*` / `?`，大小写不敏感，`PathMatchSpecA`），依次与 DLL 的**文件名 / 绝对路径 /
+  exe 相对路径**匹配，任一命中即放行；可重复（取并集）。例：`-i=*.dll`（全部）、
+  `-i=Phobos*.dll`、`-i=X.dll`（精确名，兼容旧字面语义）、`-i="my mod.dll"`（带空格引号值）、
+  `-i=Patches\X.dll`（目录成分，基准为 exe 目录；根目录 / `\Patches\` / 扩展包目录扫描时相对
+  路径分别为 `X.dll` / `Patches\X.dll` / `<Dir.Path>\X.dll`）。空模式串 `-i=` 不命中任何 DLL
+  （对齐 SyringeEx 的 `FindFile("")` 无结果）；不出现 `-i=` 时不过滤，按默认策略扫描目录
+  （含 `\Patches\` 与扩展包）——目录扫描模型下等价于 SyringeEx 缺省 `*.dll`。`SyringeEx.dll`
+  始终载入（有独立的跳过规则，不受白名单影响）。
+- **与 ExtensionPack 等机制的共存**：`-i=` 过滤在 `FindDLLsLoop` 内对所有扫描源统一生效（根目录、
+  `\Patches\`、每个扩展包目录），两层过滤为 **AND**——扩展包的 Include/Exclude（`MatchName`）
+  先于 `-i=` 模式层；被 ExtPack `Excludes` 排除的 DLL 不会因 `-i=*.dll` 复活。`LoadAllMatchedFiles`、
+  `SyringeForceLoad`、`.syexe00` 宿主过滤（`CanHostDLL`）、握手检查等机制均不受影响。
+- **与 SyringeEx 的有意差异**（不模拟）：① 匹配位置为 token 起始（SyringeEx 用 `.find()`，
+  `-foo-i=x.dll` 也会被其识别为注入——过于宽松）；② 目录成分模式的基准是 **exe 目录**而非 CWD
+  （SyringeEx 从非游戏目录启动时其 CWD 相对模式反而什么都找不到）；③ FindFirstFile 的 8.3 短名
+  匹配、`-i=*.dat` 类非 DLL 枚举等引擎细节不对齐（现实命令行不会触发）；④ `*` 在 PathMatchSpecA
+  中可跨 `\`（整串级），含目录成分的模式比 SyringeEx 略宽（命中的都是模式语义上确实匹配的文件）。
 - **`--detach` / `--nodetach`**：别名，等价于 `-DetachAfterInjection=true / false`。
   注入完成后分离调试器，目标进程继续运行；`--nodetach`（默认）保持附加直到目标退出。
 - **`--nowait`**：等价于 `-WaitForProcessExit=false`。分离后不等待目标进程退出，Syringe 立即结束。

@@ -3050,25 +3050,24 @@ void SyringeDebugger::FindDLLsLoop(const FindFile& file,const std::string& Path,
 
 	if (!IncludeDLLs.empty())
 	{
-		bool InList = false;
-		std::string cfnUpper = fn;
-		for (auto& c : cfnUpper)c = (char)::toupper(c);
-		std::string cAbsUpper = AbsPath;
-		for (auto& c : cAbsUpper)c = (char)::toupper(c);
-		for (auto const& inc : IncludeDLLs)
+		// exe 相对路径（供 -i= 含目录成分的模式匹配；三类扫描源都基于 exe 目录：
+		// 根目录 / \Patches\ / 扩展包目录，relPath 分别为 X.dll / Patches\X.dll / <Dir.Path>\X.dll）
+		std::string relPath;
 		{
-			std::string cinc = inc;
-			for (auto& c : cinc)c = (char)::toupper(c);
-			if (cfnUpper == cinc || cAbsUpper == cinc)
+			auto const exeDir = ExecutableDirectoryPath();
+			if (Path.size() > exeDir.size()
+				&& Path.compare(0, exeDir.size(), exeDir) == 0
+				&& (Path[exeDir.size()] == '\\' || Path[exeDir.size()] == '/'))
 			{
-				InList = true;
-				break;
+				relPath = Path.substr(exeDir.size() + 1);
 			}
+			if (!relPath.empty()) relPath += '\\';
+			relPath += fn;
 		}
-		if (!InList)
+		if (!MatchIncludeDLLs(fn, AbsPath, relPath, IncludeDLLs))
 		{
 			Log::WriteLine(
-				__FUNCTION__ ": DLL \"%.*s\" 不在 -i= 白名单中，跳过。",
+				__FUNCTION__ ": DLL \"%.*s\" 不匹配 -i= 白名单模式，跳过。",
 				printable(fn));
 			return;
 		}

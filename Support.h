@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <Windows.h>
+#include <shlwapi.h>
 
 struct invalid_command_arguments : std::exception {};
 
@@ -151,6 +152,32 @@ inline std::vector<std::string_view> SplitView(std::string_view const Text)
 }
 
 
+// -i= 注入白名单的模式匹配（SyringeEx 对齐，2026-07）：
+// 每个 -i=<值> 视为通配模式（* / ?，大小写不敏感，PathMatchSpecA），依次对 DLL 的
+// 文件名 / 绝对路径 / exe 相对路径 匹配，任一命中即放行；无通配符时即精确匹配
+// （兼容原有字面语义）。空模式串永不命中（对齐 SyringeEx 的 FindFile("") 无结果；
+// PathMatchSpecA 的空模式反而命中一切，故显式跳过）。patterns 为空 → 不过滤
+// （目录扫描模型下等价 SyringeEx 缺省 "*.dll" 的语义）。
+inline bool MatchIncludeDLLs(
+	std::string const& filename,
+	std::string const& absPath,
+	std::string const& relPath,
+	std::vector<std::string> const& patterns) noexcept
+{
+	if (patterns.empty()) return true;
+	for (auto const& pat : patterns)
+	{
+		if (pat.empty()) continue;
+		if (PathMatchSpecA(filename.c_str(), pat.c_str())
+			|| PathMatchSpecA(absPath.c_str(), pat.c_str())
+			|| (!relPath.empty() && PathMatchSpecA(relPath.c_str(), pat.c_str())))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 inline auto get_command_line(std::string_view arguments) {
 	struct argument_set {
 		std::string_view flags;
@@ -201,6 +228,68 @@ inline auto get_command_line(std::string_view arguments) {
 		}
 	} catch(...) {
 		// swallow everything, throw new one
+	}
+
+	throw invalid_command_arguments{};
+}
+
+// ============ SyringeEx 风格命令行（UseSyringeExCommandLine=true 时使用） ============
+
+// 全行分类（不抛异常，供 UpdateSetting/快照早退在 exe 解析之前使用）：
+// - 首个不以 '-' 开头的 token = executable（路径含空格时整体加引号，切词时引号被剔除）；
+// - 其余 token 全部归入 flags（含 exe 之后的裸 token —— SyringeEx 语义：它们不是游戏参数）。
+// 返回的 string_view 指向 SplitView 的 thread_local 存储，下次调用前有效。
+struct SyringeexLineParts
+{
+	std::vector<std::string_view> flags;
+	std::string_view executable; // 空 = 命令行未提供 exe
+};
+
+inline SyringeexLineParts ClassifySyringeexLine(std::string_view const cleaned)
+{
+	SyringeexLineParts ret;
+	for (auto const& t : SplitView(trim(cleaned)))
+	{
+		if (ret.executable.empty() && !t.starts_with("-"))
+			ret.executable = t;
+		else
+			ret.flags.push_back(t);
+	}
+	return ret;
+}
+
+// SyringeEx 风格 exe/args 解析（保留 IH 的 JSON 语义层）：
+// 1) OverwriteStartParams=true 且 DefaultExecutableName/DefaultCommandLine 均非空
+//    → 用 JSON 默认（命令行 exe 被忽略，flags 与 --args= 仍生效）；
+// 2) 命令行有 exe → 用之；游戏参数仅来自 --args= 内容（argsFromFlag）；
+// 3) 命令行无 exe 但 DefaultExecutableName 非空 → JSON 默认兜底；
+// 4) 否则抛 invalid_command_arguments。
+inline auto ResolveSyringeexCommand(
+	SyringeexLineParts const& parts, std::string const& argsFromFlag)
+{
+	struct result
+	{
+		std::string_view executable;
+		std::string arguments;
+	};
+
+	if (OverwriteStartParams && !DefaultExecName.empty() && !DefaultCmdLine.empty())
+	{
+		std::string args = argsFromFlag;
+		if (!args.empty() && !DefaultCmdLine.empty()) args += ' ';
+		args += DefaultCmdLine;
+		return result{ DefaultExecName, std::move(args) };
+	}
+
+	if (!parts.executable.empty())
+		return result{ parts.executable, argsFromFlag };
+
+	if (!DefaultExecName.empty())
+	{
+		std::string args = argsFromFlag;
+		if (!args.empty() && !DefaultCmdLine.empty()) args += ' ';
+		args += DefaultCmdLine;
+		return result{ DefaultExecName, std::move(args) };
 	}
 
 	throw invalid_command_arguments{};
