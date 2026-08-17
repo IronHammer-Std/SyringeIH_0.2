@@ -65,17 +65,23 @@ int Run(std::string_view const arguments) {
 		if(StackSnapshot) {
 			Log::WriteLine("WinMain: 快照广播模式（StackSnapshot=true），开始广播……");
 			// 载荷：把本机设置原样复述进载荷（SnapshotFileName + 线程来源过滤键；
-			// 完整的载荷生成方式后续接入）
+			// 过滤键以模块名数组形式进入载荷；完整的载荷生成方式后续接入）
 			std::string payload;
 			if(!SnapshotFileName.empty() || !SnapshotThreadFilter.empty() || !SnapshotThreadExclude.empty())
 			{
 				cJSON* const root = cJSON_CreateObject();
+				auto const addModuleList = [](cJSON* const parent, char const* key, std::vector<std::string> const& list)
+				{
+					if(list.empty()) return;
+					cJSON* const arr = cJSON_CreateArray();
+					for(auto const& s : list)
+						cJSON_AddItemToArray(arr, cJSON_CreateString(s.c_str()));
+					cJSON_AddItemToObject(parent, key, arr);
+				};
 				if(!SnapshotFileName.empty())
 					cJSON_AddStringToObject(root, "SnapshotFileName", SnapshotFileName.c_str());
-				if(!SnapshotThreadFilter.empty())
-					cJSON_AddStringToObject(root, "SnapshotThreadFilter", SnapshotThreadFilter.c_str());
-				if(!SnapshotThreadExclude.empty())
-					cJSON_AddStringToObject(root, "SnapshotThreadExclude", SnapshotThreadExclude.c_str());
+				addModuleList(root, "SnapshotThreadFilter", SnapshotThreadFilter);
+				addModuleList(root, "SnapshotThreadExclude", SnapshotThreadExclude);
 				char* const text = cJSON_PrintUnformatted(root);
 				if(text) {
 					payload = text;

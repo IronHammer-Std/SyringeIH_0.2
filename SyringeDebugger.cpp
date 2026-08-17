@@ -1544,18 +1544,29 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 	// SnapshotThreadFilter/SnapshotThreadExclude 决定本次快照输出哪些线程
 	auto const payload = SnapshotReadPayload();
 	std::string snapshotFileName;
-	std::string threadFilter;
-	std::string threadExclude;
+	std::vector<std::string> threadFilter;
+	std::vector<std::string> threadExclude;
 	if(!payload.empty())
 	{
 		if(auto* const parsed = cJSON_Parse(payload.c_str()))
 		{
-			auto* f = cJSON_GetObjectItem(parsed, "SnapshotFileName");
+			// 模块名列表：载荷内统一为数组形式（与内部存储一致）
+			auto const readModuleList = [](cJSON* const item, std::vector<std::string>& out)
+			{
+				if(!item || item->type != cJSON_Array) return;
+				out.clear();
+				auto const n = cJSON_GetArraySize(item);
+				for(int i = 0; i < n; ++i)
+				{
+					auto* const e = cJSON_GetArrayItem(item, i);
+					if(!e || e->type != cJSON_String || !e->valuestring || !e->valuestring[0]) continue;
+					out.emplace_back(e->valuestring);
+				}
+			};
+			auto* const f = cJSON_GetObjectItem(parsed, "SnapshotFileName");
 			if(f && f->valuestring && f->valuestring[0]) snapshotFileName = f->valuestring;
-			f = cJSON_GetObjectItem(parsed, "SnapshotThreadFilter");
-			if(f && f->valuestring && f->valuestring[0]) threadFilter = f->valuestring;
-			f = cJSON_GetObjectItem(parsed, "SnapshotThreadExclude");
-			if(f && f->valuestring && f->valuestring[0]) threadExclude = f->valuestring;
+			readModuleList(cJSON_GetObjectItem(parsed, "SnapshotThreadFilter"), threadFilter);
+			readModuleList(cJSON_GetObjectItem(parsed, "SnapshotThreadExclude"), threadExclude);
 			cJSON_Delete(parsed);
 		}
 	}
@@ -1574,8 +1585,18 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 	Log::WriteLine(__FUNCTION__ ": 收到快照请求，输出全部线程栈快照……");
 	if(filterActive)
 	{
+		auto const join = [](std::vector<std::string> const& list)
+		{
+			std::string ret;
+			for(auto const& s : list)
+			{
+				if(!ret.empty()) ret += ',';
+				ret += s;
+			}
+			return ret;
+		};
 		Log::WriteLine(__FUNCTION__ ": 线程来源过滤：Filter=\"%s\" Exclude=\"%s\"。",
-			threadFilter.c_str(), threadExclude.c_str());
+			join(threadFilter).c_str(), join(threadExclude).c_str());
 	}
 	InitializeSymbols();
 
@@ -1635,8 +1656,8 @@ DWORD SyringeDebugger::Handle_Snapshot(DEBUG_EVENT const& dbgEvent)
 					cJSON* const arr = JsonAddArray(parent, key);
 					for(auto const& s : items) cJSON_AddItemToArray(arr, cJSON_CreateString(s.c_str()));
 				};
-				addList(filter, "include", SnapshotSplitModuleList(threadFilter));
-				addList(filter, "exclude", SnapshotSplitModuleList(threadExclude));
+				addList(filter, "include", threadFilter);
+				addList(filter, "exclude", threadExclude);
 			}
 			char* const text = cJSON_PrintUnformatted(wrapper);
 			if(text)
