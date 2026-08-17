@@ -3351,6 +3351,21 @@ std::vector<std::string> SplitParam(const std::string_view Text)//ORIG
 }
 
 
+// .inj 行格式（Ares 时代旧格式；与 SyringeEx 的关系，2026-07 逐行核对过）：
+//   ADDR = Func[,n_over[,priority[,sub_priority]]]
+// - ADDR 十六进制（0x 前缀可有可无）；n_over 十六进制（可选，默认 0）；
+//   priority 十进制（可选，默认 100000）；sub_priority 字符串（可选，默认空）。
+// - 注释 ';' 开头、空行、\r、\n 跳过；行缓冲 0x100；.inj 存在即返回 true
+//   （哪怕一行都没解析出钩子），与 SyringeEx 相同。
+// - SyringeEx 的解析是 2~3 字段子集：%p = %[^ \t;,\r\n] , %x（无优先级概念）。
+//   兼容性（实测确认）：
+//   ① SyringeEx 写出的 "ADDR = Func" / "ADDR = Func,n_over" 这里原样兼容
+//     （priority 落到默认 100000，同址排序退化为插入序 = SyringeEx 的执行序）；
+//   ② 本工程 GenerateINJ 生成的紧凑四字段形式（无 0x、无空格）两边都能解析，
+//     SyringeEx 读时会把尾部 ",priority,sub_priority" 静默忽略；
+//   ③ func 与 n_over 之间必须用逗号分隔（空格形式两边的 sscanf 都解析不出）；
+//   ④ 唯一不兼容方向：func 含空格时仅这里可解析（SyringeEx 的
+//     %[^ \t;,\r\n] 会截断）——现实 hook 名不会有空格，属 IH 超集。
 bool SyringeDebugger::ParseInjFileHooks(
 	std::string_view const lib, HookBuffer& hooks)
 {
