@@ -92,7 +92,9 @@
 3. `SyringeHandshakeInfo`（`SyringeDebugger.h:291-301`）：`cbSize / num_hooks / checksum / exeFilesize / exeTimestamp / exeCRC / cchMessage(0x100) / Message`。
 4. 返回 `S_OK` → 载入该 DLL；其他 HRESULT → 拒绝载入，除非 DLL 带 `.syexe00` 段且 `CanHostDLL`（`1998-2000`、`2255-2282`）匹配当前 EXE 名。
 
-**可关闭**：`-EnableHandshakeCheck=false`（`Setting.cpp:379`）或 `Syringe.json` 的 `EnableHandshakeCheck:false`（默认 **true**，`Setting.cpp:19`、`213-218`）。
+**可关闭**：`-EnableHandshakeCheck=false`（`Setting.cpp`）或 `Syringe.json` 的 `EnableHandshakeCheck:false`。
+**默认值已改为 false**（原为 true，`Setting.cpp` 默认值；后经用户决定与上游 0.7.3 / SyringeEx 对齐，
+默认关闭握手检查；`--handshakes` / `-EnableHandshakeCheck=true` / JSON 可显式开启）。
 
 ---
 

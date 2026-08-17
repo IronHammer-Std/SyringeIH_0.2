@@ -27,10 +27,20 @@ int Run(std::string_view const arguments) {
 
 	try
 	{
+		// --args= 提取：取最后一个、展开其内容拼到游戏参数最前面；
+		// 片段无论出现在 exe 前还是后，都从命令行中移除。
+		std::string ArgsFromFlag;
+		auto const cleaned = ExtractArgsFlag(arguments, ArgsFromFlag);
+		if (!ArgsFromFlag.empty())
+		{
+			Log::WriteLine("WinMain: 已提取 --args= 参数： \"%.*s\"", printable(ArgsFromFlag));
+		}
+
 		// 快照广播模式可能不带 executable（如 Syringe.exe --snapshot），
-		// 不能依赖 get_command_line 成功：先按原有规则（第一个 '"' 之前）解析 flags。
-		auto const end_flags = arguments.find('"');
-		UpdateSetting(SplitView(trim(arguments.substr(0, end_flags))));
+		// 不能依赖 get_command_line 成功：先解析 flags（exe 起始引号之前；
+		// flag 值上紧贴的引号不算边界，由 FindExecutableQuote 判定）。
+		auto const end_flags = FindExecutableQuote(cleaned);
+		UpdateSetting(SplitView(trim(cleaned.substr(0, end_flags))));
 
 		// 权威兜底：预扫描可能误判（JSON 注释等），按最终配置切换日志文件
 		auto const predictedSnapshot =
@@ -63,10 +73,18 @@ int Run(std::string_view const arguments) {
 			return static_cast<int>(code);
 		}
 
-		auto const command = get_command_line(arguments);
+		auto const command = get_command_line(cleaned);
 		//Log::WriteLine("WinMain: 调用选项为： \"%.*s\"", printable(command.flags));
+
+		// 合并游戏参数：--args= 内容在前 + 引号后的尾巴在后（空格分隔）
+		std::string finalArguments(ArgsFromFlag);
+		if (!finalArguments.empty() && !command.arguments.empty())
+			finalArguments += ' ';
+		if (!command.arguments.empty())
+			finalArguments.append(command.arguments.data(), command.arguments.size());
+
 		Log::WriteLine("WinMain: 可执行文件为： \"%.*s\"", printable(command.executable));
-		Log::WriteLine("WinMain: 程序启动参数为： \"%.*s\"", printable(command.arguments));
+		Log::WriteLine("WinMain: 程序启动参数为： \"%.*s\"", printable(finalArguments));
 
 		/*
 		* 限制尼玛呢 IHS 25/1/15
@@ -93,10 +111,10 @@ int Run(std::string_view const arguments) {
 
 		Log::WriteLine(
 			"WinMain: SyringeDebugger::Run(\"%.*s\");",
-			printable(command.arguments));
+			printable(finalArguments));
 		Log::WriteLine();
 
-		Debugger.Run(command.arguments);
+		Debugger.Run(finalArguments);
 		Log::WriteLine("WinMain: SyringeDebugger::Run 完成运行。");
 		Log::WriteLine("WinMain: 程序正常结束。");
 		return ERROR_SUCCESS;

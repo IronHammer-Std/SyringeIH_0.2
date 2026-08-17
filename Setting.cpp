@@ -17,7 +17,7 @@ bool InfiniteWaitForDebug = false;
 bool ExceptionReportAlwaysFull = false;
 bool LongStackDump = false;
 bool OnlyShowStackFrame = false;
-bool EnableHandshakeCheck = true;
+bool EnableHandshakeCheck = false; // 握手检查默认关闭（2022 年起废弃的特性，与上游 0.7.3 / SyringeEx 对齐）；--handshakes、-EnableHandshakeCheck=true 或 Syringe.json 可显式开启
 bool DetachAfterInjection = false;
 bool GenerateINJ = false;
 bool CheckInsignificantException = false;

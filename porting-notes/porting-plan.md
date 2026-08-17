@@ -23,9 +23,9 @@
 | ① `-i=<dll>` 注入白名单（可重复；出现时只注入指定 DLL） | 3b21a21、bda61b9 | 缺失（仅有 `-Ext=` 扩展包、目录扫描） | 移植（接入 `Setting::UpdateSetting` 风格） |
 | ② 多线程安全返回地址：`FS:[0x14]`（TIB）代替共享区 ReturnEIP | fa55bcc | 已用"栈上临时槽"天然线程安全，但该槽在恢复后 ESP 可变时失效 | 与③⑦合并重写 trampoline |
 | ③ 钩子内修改 ESP（17 字节 POPAD 副本，ESP 最后恢复） | 3e36626 | 缺失（POPAD 丢弃保存的 ESP） | 移植 |
-| ④ 新命令行格式 `CommandLineToArgvW`+`--args=` | bda61b9 | 自有解析器（引号 exe + 尾部参数）已覆盖场景 | **不移植整段**，只吸收 `-i=`/新 flag |
+| ④ 新命令行格式 `CommandLineToArgvW`+`--args=` | bda61b9 | 自有解析器（引号 exe + 尾部参数）已覆盖场景 | **不移植整段**，只吸收 `-i=`/新 flag；后经用户决定补上 `--args=`（取最后一个、展开拼接到游戏参数最前，可出现在 exe 前后；另加引号感知 flags 切词） |
 | ⑤ detach 生命周期：`--detach/--nodetach/--nowait`，默认附加直到目标退出 | 764beda、8d797f8、982517f | 有 `DetachAfterInjection`（detach 后立即退出），缺"detach 但等待退出" | 部分移植：补 nowait 语义 + 等待句柄逻辑 |
-| ⑥ 可选握手 `--handshakes`（SyringeEx 默认关闭） | 39fc085 | 已有 `EnableHandshakeCheck`（默认 true，flag/JSON 可关） | **不需要移植**，保留 IH 默认值 |
+| ⑥ 可选握手 `--handshakes`（SyringeEx 默认关闭） | 39fc085 | 已有 `EnableHandshakeCheck`（默认 true，flag/JSON 可关） | **不需要移植**，保留 IH 默认值；后经用户决定改为默认 false（与 SyringeEx / 上游 0.7.3 对齐） |
 | ⑦ 零标志保留（CMP/JE 提到 POPFD 之前，两条路径各自恢复） | ba05ddb | **实际缺失**：`CMP ss:[ESP-2Ch],0` 在 POPFD 之后，破坏恢复的 ZF | 移植 |
 | ⑧ Feature Flags SDK：`include/Syringe.h` 的 `SyringeFeatures::{ESPModification,ZFPreservation,ReladdrInstructionFixup}` 导出 bool + 注入时写 true | 4e43375、54be1c3 | 缺失 | 移植（头文件几乎原样 + 协商机制适配 IH 加载状态机） |
 | ⑨ Zydis 相对指令修复：vendored Zydis5/Zycore-C1.5.2 + `RebuildInstructions` 两趟算法 + 内存上界×3 + 17 个单测 | 54be1c3 | 有自有相对钩子体系（模块基址+偏移，无反汇编器；覆盖长度靠声明） | **移植（最重一项）** |
@@ -95,7 +95,7 @@ proceed:  POPFD + 17B 副本 → 被覆盖指令 + E9 跳回
 
 1. **trampoline 形状**：照搬 SyringeEx 2-dword 形状（下游 DLL 回调全部只用单参数 `REGISTERS* R`，不受影响）。
 2. **Zydis**：完整移植，含 Tests 工程与 17 个单测。
-3. **握手默认值**：保留 IH 现状（`EnableHandshakeCheck` 默认 true）。
+3. **握手默认值**：保留 IH 现状（`EnableHandshakeCheck` 默认 true）。→ **后续调整（2026-07）**：改为默认 **false**，与 SyringeEx / 上游 0.7.3 对齐（`--handshakes` / `-EnableHandshakeCheck=true` / JSON 可显式开启）。
 4. **Release 工具集**：升级 v143（与 SyringeEx 一致，放弃 XP 目标；WindowsTargetPlatformVersion 需同步处理）。
 
 ### 血缘补充（用户更正）

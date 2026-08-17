@@ -10,6 +10,7 @@
 #include "Log.h"
 #include "Snapshot.h"
 #include "Setting.h"
+#include "Support.h"
 #include "cJSON.h"
 
 #include <windows.h>
@@ -462,4 +463,146 @@ TEST_CASE(setting_ps51_split_repair)
 	CHECK(SnapshotFileName == old);
 
 	SnapshotFileName = old;
+}
+
+// 引号感知切词：带空格的 flag 值合并为单 token，引号自身被剔除
+TEST_CASE(splitview_quote_aware)
+{
+	auto const tokens = SplitView("-i=first -SnapshotFileName=\"my log.txt\" -Ext=pack");
+	CHECK(tokens.size() == 3);
+	CHECK(tokens[0] == "-i=first");
+	CHECK(tokens[1] == "-SnapshotFileName=my log.txt");
+	CHECK(tokens[2] == "-Ext=pack");
+}
+
+// 引号内连续空格保留；引号外连续空白不产生空 token；空引号对不产生 token
+TEST_CASE(splitview_whitespace_and_empty_quotes)
+{
+	auto const tokens = SplitView("  -a=1   \"b c  d\"   \"\"   -e=2  ");
+	CHECK(tokens.size() == 3);
+	CHECK(tokens[0] == "-a=1");
+	CHECK(tokens[1] == "b c  d");
+	CHECK(tokens[2] == "-e=2");
+}
+
+// 未闭合引号一直吞到段尾
+TEST_CASE(splitview_unclosed_quote)
+{
+	auto const tokens = SplitView("-SnapshotFileName=\"my log.txt");
+	CHECK(tokens.size() == 1);
+	CHECK(tokens[0] == "-SnapshotFileName=my log.txt");
+}
+
+// 引号感知切词 + UpdateSetting 端到端：带空格的文件名
+TEST_CASE(setting_quoted_value_with_spaces)
+{
+	auto const old = SnapshotFileName;
+	UpdateSetting(SplitView("-SnapshotFileName=\"my log.txt\""));
+	CHECK(SnapshotFileName == "my log.txt");
+	SnapshotFileName = old;
+}
+
+// FindExecutableQuote：flag 值内引号不算 exe 边界，token 开头的引号才算
+TEST_CASE(find_executable_quote_boundary)
+{
+	CHECK(FindExecutableQuote("-SnapshotFileName=\"my log.txt\" \"gamemd.exe\"") == 31);
+	CHECK(FindExecutableQuote("\"gamemd.exe\"") == 0);
+	CHECK(FindExecutableQuote("--snapshot") == std::string_view::npos);
+	CHECK(FindExecutableQuote("-i=x.dll \"gamemd.exe\" -CD") == 9);
+	CHECK(FindExecutableQuote("-i=\"a b.dll\" -Ext=p \"gamemd.exe\"") == 20);
+}
+
+// 全链路：带空格 flag 值 + 引号 exe + 尾部参数
+TEST_CASE(quoted_flag_full_command_line)
+{
+	auto const cmd = get_command_line("-SnapshotFileName=\"my log.txt\" \"gamemd.exe\" -CD");
+	CHECK(cmd.executable == "gamemd.exe");
+	CHECK(cmd.arguments == "-CD");
+	CHECK(cmd.flaglist.size() == 1);
+	CHECK(cmd.flaglist[0] == "-SnapshotFileName=my log.txt");
+}
+
+// --args= 提取：引号形式取引号内文本，整段从命令行移除
+TEST_CASE(extract_args_flag_basic)
+{
+	std::string content;
+	auto const cleaned = ExtractArgsFlag("-i=a --args=\"-CD -X\" \"gamemd.exe\" -Y", content);
+	CHECK(content == "-CD -X");
+	CHECK(cleaned == "-i=a  \"gamemd.exe\" -Y");
+}
+
+// --args= 前后都出现：取最后一个，两处都移除；裸形式（无引号）取到空白
+TEST_CASE(extract_args_flag_last_wins)
+{
+	std::string content;
+	auto const cleaned = ExtractArgsFlag("--args=\"-CD\" \"gamemd.exe\" -SPEEDCONTROL --args=-WIN", content);
+	CHECK(content == "-WIN");
+	CHECK(cleaned == " \"gamemd.exe\" -SPEEDCONTROL ");
+}
+
+// 边界：空内容、无 '=' 不识别、空输入、引号内形似文本不动
+TEST_CASE(extract_args_flag_edges)
+{
+	std::string content;
+
+	CHECK(ExtractArgsFlag("--args=\"\" \"gamemd.exe\"", content) == " \"gamemd.exe\"");
+	CHECK(content.empty());
+
+	CHECK(ExtractArgsFlag("--args \"gamemd.exe\"", content) == "--args \"gamemd.exe\"");
+	CHECK(content.empty());
+
+	CHECK(ExtractArgsFlag("", content).empty());
+	CHECK(content.empty());
+
+	// 引号保护：游戏参数里的 "--args=literal" 原样保留
+	CHECK(ExtractArgsFlag("\"gamemd.exe\" \"--args=literal\"", content) == "\"gamemd.exe\" \"--args=literal\"");
+	CHECK(content.empty());
+}
+
+// 全链路：--args 在 exe 前、后各出现一次，最后一个生效，展开拼到游戏参数最前
+TEST_CASE(args_flag_full_command_line)
+{
+	std::string content;
+	auto const cleaned = ExtractArgsFlag("--args=\"-CD\" \"gamemd.exe\" -SPEEDCONTROL --args=\"-WIN\"", content);
+	CHECK(content == "-WIN");
+
+	auto const cmd = get_command_line(cleaned);
+	CHECK(cmd.executable == "gamemd.exe");
+	CHECK(cmd.arguments == "-SPEEDCONTROL");
+
+	// 与 Main.cpp 相同的合并规则：--args 内容在前 + 尾巴在后（空格分隔）
+	std::string merged = content;
+	if (!merged.empty() && !cmd.arguments.empty())
+		merged += ' ';
+	if (!cmd.arguments.empty())
+		merged.append(cmd.arguments.data(), cmd.arguments.size());
+	CHECK(merged == "-WIN -SPEEDCONTROL");
+}
+
+// trim：全空白串收缩为空串（--args 移除后尾巴只剩空白时不得残留空格）
+TEST_CASE(trim_all_whitespace_empty)
+{
+	CHECK(trim("   ").empty());
+	CHECK(trim("").empty());
+	CHECK(trim(" a " ) == "a");
+	CHECK(trim("a") == "a");
+}
+
+// 全链路：--args 移除后尾巴只剩空白 → 合并结果无多余空格
+TEST_CASE(args_flag_whitespace_only_tail)
+{
+	std::string content;
+	auto const cleaned = ExtractArgsFlag("--args=\"-WIN\" \"gamemd.exe\" --args=\"-OLD\"", content);
+	CHECK(content == "-OLD");
+
+	auto const cmd = get_command_line(cleaned);
+	CHECK(cmd.executable == "gamemd.exe");
+	CHECK(cmd.arguments.empty());
+
+	std::string merged = content;
+	if (!merged.empty() && !cmd.arguments.empty())
+		merged += ' ';
+	if (!cmd.arguments.empty())
+		merged.append(cmd.arguments.data(), cmd.arguments.size());
+	CHECK(merged == "-OLD");
 }

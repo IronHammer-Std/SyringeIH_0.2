@@ -8,11 +8,21 @@ SyringeIH —— 基于 Ares-Developers/Syringe 演化的 DLL 注入与运行时
 语法（沿用 SyringeIH 原有格式）：
 
 ```
-Syringe.exe [-Name=true|false ...] [-Ext=扩展包名] [-i=<dll> ...] "<exe name>" <游戏参数>
+Syringe.exe [-Name=true|false ...] [-Ext=扩展包名] [-i=<dll> ...] [--args="<游戏参数>"] "<exe name>" <游戏参数>
 ```
 
 SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=`、`-DetachAfterInjection=`、
 `-AutoTerminate=` 等，全部也可在 Syringe.json 中配置）。
+
+flags 段支持**引号感知切词**：引号紧贴值书写（如 `-SnapshotFileName="my log.txt"`）时，
+引号内的空格属于参数值、合并为单个 flag，引号本身被剔除；exe 的起始引号以"token 开头位置的 `"`"
+判定，flag 值内的引号不会误判为 exe 边界。未闭合引号会吞到段尾。注意：整体加引号的 flag
+（`"-SnapshotFileName=my log.txt"`）仍会被视为 exe 位置，请用 `-X="值"` 写法。
+
+- **`--args="<游戏参数>"`**：移植自 SyringeEx。可放在 exe 的**前面或后面**；出现多个时取
+  **最后一个**；引号内文本被展开，拼接在游戏参数**最前面**（`--args=` 内容在前 +
+  引号后尾巴在后，空格分隔），`--args="..."` 片段本身不再传给游戏。
+  裸形式 `--args=xxx`（无引号）取到下一个空白为止；`--args` 不带 `=` 不识别。
 
 ### 移植自 SyringeEx 的新增项
 
@@ -22,7 +32,9 @@ SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=
   注入完成后分离调试器，目标进程继续运行；`--nodetach`（默认）保持附加直到目标退出。
 - **`--nowait`**：等价于 `-WaitForProcessExit=false`。分离后不等待目标进程退出，Syringe 立即结束。
   默认（无 `--nowait`）在分离后等待目标进程退出并记录退出码。
-- **`--handshakes`**：别名，等价于 `-EnableHandshakeCheck=true`（SyringeIH 默认即开启握手检查）。
+- **`--handshakes`**：别名，等价于 `-EnableHandshakeCheck=true`。握手检查默认**关闭**
+  （2022 年起废弃的特性，与上游 0.7.3 / SyringeEx 对齐）；可用此 flag、`-EnableHandshakeCheck=true`
+  或 Syringe.json 的 `EnableHandshakeCheck` 显式开启。
 - 另新增 JSON 设置项 **`WaitForProcessExit`**（默认 true）。
 
 ## 快照模式
@@ -44,8 +56,8 @@ SyringeIH 原有 flag 保持不变（`-LongStackDump=`、`-EnableHandshakeCheck=
     ⚠ Windows PowerShell 5.1 传参会把 `-X=值.扩展名` 在点号前拆开（`snap_manual.log` 变成
     `snap_manual .log`）。Syringe 已在 flag 解析层自动拼回（日志可见"命令行参数修复"），
     一般无需处理；若遇到异常可给整个 flag 加引号或改用 `--%` / cmd /c（pwsh 7+ 无此问题）。
-
-
+- 随包提供 **`一键快照.bat`**（与 `Syringe.exe` 同目录，GBK 编码）：双击即广播一轮快照；
+  文件内注释说明了换成 `--snapshot -SnapshotFileName=xxx.log` 的效果。
 
 ### 快照 / 异常报告格式（skill 接口）v1
 
@@ -129,6 +141,8 @@ if (SyringeFeatures::ZFPreservation) {
 ## 构建
 
 - 解决方案 `Syringe.sln`：`Syringe`（主程序，Win32）、`SyringeExDll`、`Zydis`（vendored 静态库）、
-  `Tests`（`RebuildInstructions` 单测，Release 构建，运行 `tests\bin\Tests.exe`）。
+  `NametestTarget` / `NametestStdTarget`（线程命名/快照载荷集成测试用的被调试程序，输出到 `tests\bin\`）、
+  `Tests`（单测 + 端到端集成测试，Release 构建，运行 `tests\bin\Tests.exe`；端到端用例会在
+  `tests\bin` 内跑完整调试会话，自动从 `Release\` 复制 `SyringeEx.dll`，资产缺失时跳过）。
 - 工具集 v143、Windows SDK 10.0；主程序 Release/Debug 均为 v143。
 - vendored 第三方：Zydis 5.0.0 与 Zycore-C 1.5.2（MIT，见 `external/`）。

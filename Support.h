@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Setting.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -19,20 +19,134 @@ inline auto trim(std::string_view string) noexcept {
 		auto const last = string.find_last_not_of(' ');
 		string = string.substr(first, last - first + 1);
 	}
+	else string = {}; // 全空白串收缩为空串
 	return string;
 }
 
-inline std::vector<std::string_view> SplitView(const std::string_view Text)//ORIG
+// 提取 --args= 参数：把每个 "--args=..." 片段从原始命令行中移除，返回清理后的
+// 命令行（thread_local 存储中的视图）；outContent 置为最后一个 --args= 的内容。
+// - 引号形式 "--args=\"...\""：取引号内文本，连同开闭引号整段移除；
+// - 裸形式 "--args=xxx"：取到下一个空白为止（片段本身移除，空白保留）；
+// - "--args" 不带 '=' 不识别；
+// - 仅在 token 开头匹配（行首或前一个字符为空白），引号内形似文本不受影响；
+// - 未闭合引号内容吞到行尾。
+inline std::string_view ExtractArgsFlag(std::string_view const arguments, std::string& outContent)
 {
-	if (Text.empty())return {};
-	size_t cur = 0, crl;
-	std::vector<std::string_view> ret;
-	while ((crl = Text.find_first_of(' ', cur)) != Text.npos)
+	static thread_local std::string Storage;
+
+	outContent.clear();
+	if (arguments.empty()) return arguments;
+
+	Storage.clear();
+	Storage.reserve(arguments.size());
+
+	std::string_view constexpr FLAG = "--args=";
+	size_t const len = arguments.size();
+	size_t cur = 0;
+
+	while (cur < len)
 	{
-		ret.push_back(trim(Text.substr(cur, crl - cur)));
-		cur = crl + 1;
+		bool hit = false;
+		if (arguments.compare(cur, FLAG.size(), FLAG) == 0)
+		{
+			bool const atTokenStart = cur == 0
+				|| arguments[cur - 1] == ' ' || arguments[cur - 1] == '\t';
+			if (atTokenStart)
+			{
+				size_t spanEnd = cur + FLAG.size();
+				outContent.clear();
+				if (spanEnd < len && arguments[spanEnd] == '"')
+				{
+					++spanEnd; // 跳过开引号
+					auto const contentStart = spanEnd;
+					while (spanEnd < len && arguments[spanEnd] != '"')
+						++spanEnd;
+					outContent.assign(arguments.substr(contentStart, spanEnd - contentStart));
+					if (spanEnd < len) ++spanEnd; // 连同闭引号移除
+				}
+				else
+				{
+					auto const contentStart = spanEnd;
+					while (spanEnd < len && arguments[spanEnd] != ' ' && arguments[spanEnd] != '\t')
+						++spanEnd;
+					outContent.assign(arguments.substr(contentStart, spanEnd - contentStart));
+				}
+				cur = spanEnd;
+				hit = true;
+			}
+		}
+		if (!hit)
+		{
+			Storage.push_back(arguments[cur]);
+			++cur;
+		}
 	}
-	ret.push_back(trim(Text.substr(cur)));
+	return Storage;
+}
+
+// 找 exe 起始引号：第一个位于 token 开头的 '"'（行首，或前一个字符为空白）。
+// 紧贴在 flag 值上的引号（如 -SnapshotFileName="my log.txt"）不算 exe 边界。
+inline std::string_view::size_type FindExecutableQuote(std::string_view const arguments) noexcept
+{
+	for (std::string_view::size_type i = 0; i < arguments.size(); ++i)
+	{
+		if (arguments[i] == '"')
+		{
+			bool const atTokenStart = i == 0
+				|| arguments[i - 1] == ' ' || arguments[i - 1] == '\t';
+			if (atTokenStart)
+				return i;
+		}
+	}
+	return std::string_view::npos;
+}
+
+// 引号感知的 flags 切词：
+// - 空格/制表符在引号外是分隔符；连续空白不产生空 token；
+// - '"' 切换引号状态且自身被剔除（引号内容合并进同一 token）；
+// - 引号内空格属于 token 内容（-SnapshotFileName="my log.txt" → 单 token）；
+// - 未闭合引号一直吞到段尾。
+// 返回的 string_view 指向 thread_local 存储，下一次调用本函数前保持有效。
+inline std::vector<std::string_view> SplitView(std::string_view const Text)
+{
+	static thread_local std::string Storage;
+
+	std::vector<std::string_view> ret;
+	if (Text.empty()) return ret;
+
+	Storage.clear();
+	Storage.reserve(Text.size()); // 输出总长 ≤ 输入长，预分配后视图不会因扩容悬空
+
+	size_t const len = Text.size();
+	size_t cur = 0;
+	bool inQuote = false;
+
+	while (cur < len)
+	{
+		while (cur < len && !inQuote && (Text[cur] == ' ' || Text[cur] == '\t'))
+			++cur;
+		if (cur >= len) break;
+
+		auto const tokStart = Storage.size();
+		while (cur < len)
+		{
+			char const c = Text[cur];
+			if (c == '"')
+			{
+				inQuote = !inQuote;
+				++cur;
+				continue;
+			}
+			if (!inQuote && (c == ' ' || c == '\t'))
+				break;
+			Storage.push_back(c);
+			++cur;
+		}
+		if (Storage.size() > tokStart)
+		{
+			ret.push_back(std::string_view(Storage).substr(tokStart, Storage.size() - tokStart));
+		}
+	}
 	return ret;
 }
 
@@ -48,7 +162,7 @@ inline auto get_command_line(std::string_view arguments) {
 	try {
 		argument_set ret;
 
-		auto const end_flags = arguments.find('"');
+		auto const end_flags = FindExecutableQuote(arguments);
 		ret.flags = trim(arguments.substr(0, end_flags));
 		if (!ret.flags.empty())
 		{
