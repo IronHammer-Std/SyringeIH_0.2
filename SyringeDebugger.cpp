@@ -34,6 +34,7 @@ inline cJSON* JsonAddArray(cJSON* object, char const* name)
 #include <fstream>
 #include <memory>
 #include <numeric>
+#include <vector>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -3246,12 +3247,17 @@ void SyringeDebugger::FindDLLs()
 	Breakpoints.clear();
 	std::wstring EDPath = ExecutableDirectoryPathW();
 
+	// 收集实际扫描过的扩展目录（根目录 / Patches / 每个 ExtensionPack 目录，均为绝对路径）。
+	// 结尾通过环境变量传给游戏进程，供运行时按名加载伴生库（如 IHLibList.dll）的组件读取。
+	std::vector<std::wstring> ScanDirs;
+
 	
 	Log::WriteLine(__FUNCTION__ ": 在目录 \"%s\" 中搜寻DLL。 ", ExecutableDirectoryPath().c_str());
 	for(auto file = FindFile((EDPath + L"\\*.dll").c_str()); file; ++file) {
 		Log::WriteLine(__FUNCTION__ ": 正在检测 DLL \"%s\".", UnicodetoANSI(file->cFileName).c_str());
 		FindDLLsLoop(file, UnicodetoANSI(EDPath), false);
 	}
+	ScanDirs.emplace_back(EDPath);
 
 	bool UseDefaultLoadingPolicy = true;
 	if (!DefaultExtPack.empty() && ExtPacks.find(DefaultExtPack) != ExtPacks.end())
@@ -3264,6 +3270,7 @@ void SyringeDebugger::FindDLLs()
 	{
 		Log::WriteLine(__FUNCTION__ ": 使用默认扩展配置（\"\\Patches\\*.dll\"）。");
 		std::wstring EDPathAlt = EDPath + L"\\Patches";
+		ScanDirs.emplace_back(EDPathAlt);
 		Log::WriteLine(__FUNCTION__ ": 在目录 \"%s\\Patches\"中搜寻DLL。", ExecutableDirectoryPath().c_str());
 		for (auto file = FindFile((EDPath + L"\\Patches\\*.dll").c_str()); file; ++file) {
 			Log::WriteLine(__FUNCTION__ ": 正在检测 DLL \"%s\".", UnicodetoANSI(file->cFileName).c_str());
@@ -3278,6 +3285,7 @@ void SyringeDebugger::FindDLLs()
 		{
 			auto wp = UTF8toUnicode(Dir.Path);
 			std::wstring EDPathAlt = EDPath + wp;
+			ScanDirs.emplace_back(EDPathAlt);
 			Log::WriteLine(__FUNCTION__ ": 在目录 \"%s%s\"中搜寻DLL。", ExecutableDirectoryPath().c_str(), Dir.Path.c_str());
 			for (auto file = FindFile((EDPath + wp + L"\\*.*").c_str()); file; ++file) {
 				auto U8 = UnicodetoUTF8(file->cFileName);
@@ -3296,6 +3304,16 @@ void SyringeDebugger::FindDLLs()
 		MessageBoxW(NULL, L"没有找到 SyringeEx.dll，请确保它位于可被找到的位置。", VersionLString, MB_OK | MB_ICONERROR);
 		throw_lasterror(ERROR_FILE_NOT_FOUND, "SyringeEx.dll", true);
 	}
+
+	// 把实际扫描过的目录列表传给游戏进程（CreateProcess 子进程继承环境变量），
+	// 使游戏内"运行时按名加载伴生库"的组件（如 IH 的 IHLibList.dll 加载器）能认扩展包目录。
+	std::wstring Dirs;
+	for (auto const& d : ScanDirs)
+	{
+		if (!Dirs.empty()) Dirs += L';';
+		Dirs += d;
+	}
+	SetEnvironmentVariableW(L"SYRINGE_EXTENSION_DIRS", Dirs.empty() ? nullptr : Dirs.c_str());
 	
 	std::unordered_map<std::string, std::string, UpperHash, UpperEqualPred> LibNames;
 	size_t Size = DLLs.size();
